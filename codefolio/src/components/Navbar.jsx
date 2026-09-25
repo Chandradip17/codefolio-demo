@@ -59,7 +59,7 @@ export default function Navbar() {
 
   const accountLinks = user ? (
     <>
-      {user.role === 'organizer' ? (
+      {user.role === 'organizer' || user.isAdmin ? (
         <NavLink to="/admin" className="nav-link nav-link--pill">
           <Icon name="grid" size={16} /> Admin Panel
         </NavLink>

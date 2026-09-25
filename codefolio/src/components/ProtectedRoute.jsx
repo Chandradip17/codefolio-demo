@@ -1,33 +1,52 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { rememberNext } from '../services/supabase'
 import { EmptyState, Button } from './ui'
 
+export function PageSpinner() {
+  return (
+    <div className="page-loading" aria-busy="true">
+      <span className="spinner spinner--lg" aria-hidden="true" />
+    </div>
+  )
+}
+
+// role: 'organizer' = approved hosts (and platform admins); 'admin' = platform admins.
+const allowed = (user, role) => !role || (role === 'admin' ? user.isAdmin : role === 'organizer' ? user.role === 'organizer' || user.isAdmin : user.role === role)
+
+// Signed in + onboarded (+ optional role). The database enforces access with RLS;
+// this decides which screen to show and remembers where the visitor was going.
 export default function ProtectedRoute({ role, children }) {
   const { user, ready } = useAuth()
   const location = useLocation()
+  const here = location.pathname + location.search
 
-  if (!ready) {
-    return (
-      <div className="page-loading" aria-busy="true">
-        <span className="spinner spinner--lg" aria-hidden="true" />
-      </div>
-    )
+  if (!ready) return <PageSpinner />
+  if (!user) {
+    rememberNext(here)
+    return <Navigate to="/login" replace state={{ from: here }} />
   }
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
-  if (role && user.role !== role) {
+  if (!user.onboarded) {
+    rememberNext(here)
+    return <Navigate to="/onboarding" replace />
+  }
+  if (!allowed(user, role)) {
+    const host = role === 'organizer'
     return (
       <div className="container page-pad">
         <EmptyState
           icon="lock"
-          title={role === 'organizer' ? 'Organizers only' : 'Attendees only'}
+          title={host ? 'Organizers only' : role === 'admin' ? 'Platform admins only' : 'Attendees only'}
           message={
-            role === 'organizer'
-              ? 'The Admin Panel is only available to organizer accounts. Create an organizer account to host events.'
-              : 'This dashboard is for attendee bookings. As an organizer, head to your Admin Panel.'
+            host
+              ? 'The Admin Panel is for approved hosts. Send a host request and a Codefolio admin will review it.'
+              : role === 'admin'
+                ? 'Only Codefolio platform admins can review host requests.'
+                : 'This dashboard is for attendee bookings. As an organizer, head to your Admin Panel.'
           }
           action={
-            <Button to={role === 'organizer' ? '/dashboard' : '/admin'} iconRight="arrowRight">
-              Go to {role === 'organizer' ? 'my dashboard' : 'Admin Panel'}
+            <Button to={host ? '/host' : role === 'admin' ? '/admin' : '/admin'} iconRight="arrowRight">
+              {host ? 'Request host access' : 'Go to Admin Panel'}
             </Button>
           }
         />

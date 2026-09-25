@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codefolio · Developer events, hackathons &amp; projects</title>
+    <meta name="description" content="Discover developer events and hackathons across India, apply with one profile, check in with a personal QR, and showcase what you built." />
+    <meta name="theme-color" content="#F6F5F1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101217" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Codefolio" />
+    <meta property="og:title" content="Codefolio · Discover. Build. Participate." />
+    <meta property="og:description" content="Developer events, hackathons and projects, in one profile." />
+    <meta property="og:image" content="/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Apply the saved theme before first paint (no flash). -->
+    <script>
+      ;(function () {
+        try {
+          var p = localStorage.getItem('cf:theme')
+          var t = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          document.documentElement.dataset.theme = t
+          document.documentElement.style.colorScheme = t
+        } catch (e) {}
+      })()
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

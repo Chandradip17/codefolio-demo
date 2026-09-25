@@ -1,64 +1,41 @@
-import { useState } from 'react'
-import { Button, Badge, Input, Select, Textarea } from '../components/ui'
+import { Link } from 'react-router-dom'
+import Icon from '../components/Icon'
+import ProfileForm, { AvatarImage } from '../components/ProfileForm'
+import { Badge } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { CITIES } from '../data/chapters'
 import { formatDateTime } from '../utils/format'
 
 export default function Profile({ embedded }) {
-  const { user, updateProfile } = useAuth()
+  const { user } = useAuth()
   const toast = useToast()
-  const [form, setForm] = useState({ name: user.name, city: user.city || '', chapter: user.chapter || '', bio: user.bio || '' })
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
-
-  async function submit(e) {
-    e.preventDefault()
-    if (form.name.trim().length < 2) {
-      setError('Enter your full name.')
-      return
-    }
-    setError('')
-    setBusy(true)
-    try {
-      await updateProfile({ ...form, name: form.name.trim() })
-      toast({ title: 'Profile updated' })
-    } catch (err) {
-      toast({ title: "Couldn't save", message: err.message, tone: 'error' })
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <div className={embedded ? '' : 'container page-pad'}>
       <div className="profile">
         <aside className="profile__card">
-          <div className="avatar avatar--xl" aria-hidden="true">
-            {user.name.slice(0, 1)}
-          </div>
+          <AvatarImage src={user.avatarUrl} name={user.name} className="avatar--xl" />
           <h1 className="profile__name">{user.name}</h1>
+          {user.username && <p className="muted mono-handle">@{user.username}</p>}
           <p className="muted">{user.email}</p>
           <Badge tone={user.role === 'organizer' ? 'saffron' : 'indigo'} icon={user.role === 'organizer' ? 'grid' : 'ticket'}>
             {user.role === 'organizer' ? 'Organizer' : 'Attendee'}
           </Badge>
           <p className="small muted">Member since {formatDateTime(user.createdAt).split(',')[0]}</p>
+          {user.username && (
+            <Link to={`/profile/${user.username}`} className="link link--arrow">
+              View public profile <Icon name="arrowRight" size={14} />
+            </Link>
+          )}
+          {user.role !== 'organizer' && !user.isAdmin && (
+            <Link to="/host" className="link link--arrow">
+              Host events on Codefolio <Icon name="arrowRight" size={14} />
+            </Link>
+          )}
         </aside>
-        <form className="card form-stack profile__form" onSubmit={submit} noValidate>
-          <h2>Profile details</h2>
-          <Input label="Full Name" value={form.name} onChange={set('name')} error={error} required />
-          <div className="grid-2">
-            <Select label="City" value={form.city} onChange={set('city')} options={[{ value: '', label: 'Not set' }, ...CITIES, 'Other']} />
-            <Input label={user.role === 'organizer' ? 'Organization/Chapter' : 'Home chapter (optional)'} value={form.chapter} onChange={set('chapter')} />
-          </div>
-          <Textarea label="Bio" rows={4} value={form.bio} onChange={set('bio')} />
-          <div className="form-actions">
-            <Button type="submit" loading={busy}>
-              Save profile
-            </Button>
-          </div>
-        </form>
+        <div>
+          <ProfileForm mode="edit" onSaved={() => toast({ title: 'Profile updated' })} />
+        </div>
       </div>
     </div>
   )

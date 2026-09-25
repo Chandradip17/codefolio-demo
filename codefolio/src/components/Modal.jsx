@@ -78,7 +78,7 @@ export default function Modal({ open, onClose, title, size = 'md', children, foo
   )
 }
 
-export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = 'Confirm', tone = 'danger', requireText, busy }) {
+export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = 'Confirm', cancelLabel = 'Keep it', tone = 'danger', requireText, busy }) {
   const [typed, setTyped] = useState('')
   useEffect(() => {
     if (open) setTyped('')
@@ -93,7 +93,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Keep it
+            {cancelLabel}
           </Button>
           <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm} disabled={blocked} loading={busy}>
             {confirmLabel}

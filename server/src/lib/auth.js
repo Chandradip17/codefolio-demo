@@ -10,11 +10,23 @@ export function forgetToken(token) {
   cache.delete(token)
 }
 
-async function resolve(token) {
+// Roles changed (e.g. a host request was approved): drop cached identities so
+// the next request sees the new role immediately.
+export function clearUserCache() {
+  cache.clear()
+}
+
+export async function resolveUser(token) {
   const hit = cache.get(token)
   if (hit && hit.until > Date.now()) return hit.user
 
   const { data, error } = await admin.auth.getUser(token)
+  // A network hiccup reaching Supabase Auth isn't an expired session: say so,
+  // so the client doesn't refresh tokens / sign the member out for nothing.
+  if (error && (error.name === 'AuthRetryableFetchError' || !error.status || error.status >= 500)) {
+    console.warn('[auth] getUser failed:', error.name, error.message)
+    throw new HttpError(503, 'auth/unavailable', "Can't reach the sign-in service right now. Please try again in a moment.")
+  }
   if (error || !data?.user) throw new HttpError(401, 'auth/expired', 'Your session has expired. Please log in again.')
 
   const row = must(await admin.from('profiles').select('*').eq('id', data.user.id).maybeSingle())
@@ -35,7 +47,7 @@ export async function requireAuth(req, res, next) {
   if (!admin) throw notConfigured()
   const token = bearer(req)
   if (!token) throw new HttpError(401, 'auth/required', 'Please log in first.')
-  req.user = await resolve(token)
+  req.user = await resolveUser(token)
   req.token = token
   next()
 }

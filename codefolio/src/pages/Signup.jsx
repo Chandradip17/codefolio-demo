@@ -6,6 +6,7 @@ import { Button, Input, Segmented, Select, Textarea } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { CITIES } from '../data/chapters'
+import { rememberNext } from '../services/supabase'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -21,7 +22,9 @@ export default function Signup() {
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (user && !busy) return <Navigate to={user.role === 'organizer' ? '/admin' : '/dashboard'} replace />
+  // Signed-in members who click "Become an Organizer" go to the host request page.
+  if (user && !busy && params.get('role') === 'organizer' && user.role !== 'organizer') return <Navigate to="/host" replace />
+  if (user && !busy) return <Navigate to={!user.onboarded ? '/onboarding' : user.role === 'organizer' ? '/admin' : '/dashboard'} replace />
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
@@ -50,8 +53,12 @@ export default function Signup() {
     setBusy(true)
     try {
       const u = await signup({ ...form, role })
-      toast({ title: 'Welcome to Codefolio! 🎉', message: role === 'organizer' ? 'Your organizer account is ready.' : 'Your next event is waiting.' })
-      navigate(location.state?.from || (u.role === 'organizer' ? '/admin' : '/events'), { replace: true })
+      toast({
+        title: 'Welcome to Codefolio! 🎉',
+        message: role === 'organizer' ? 'Your host request was sent. An admin will review it soon.' : 'Your next event is waiting.',
+      })
+      rememberNext(location.state?.from || (role === 'organizer' ? '/host' : '/events'))
+      navigate(u.onboarded ? location.state?.from || '/events' : '/onboarding', { replace: true })
     } catch (e) {
       setFormError(e.message)
       setBusy(false)

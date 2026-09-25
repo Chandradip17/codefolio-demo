@@ -87,6 +87,28 @@ export const newEventSchema = eventSchema.superRefine((v, ctx) => {
 export const bookingSchema = z.object({
   eventId: z.string().trim().min(1).max(64),
   seats: z.coerce.number().int().min(1).max(4).default(1),
+  answers: z.record(z.string(), z.any()).optional().default({}),
+})
+
+export const reviewSchema = z.object({ note: z.string().trim().max(500).optional().default('') })
+
+export const checkInSchema = z.object({
+  eventId: z.string().trim().min(1).max(64),
+  code: z.string().trim().min(4, 'Enter the code.').max(200),
+})
+
+export const hostRequestSchema = z.object({
+  type: z.enum(['event', 'hackathon', 'both']),
+  organization: z.string().trim().min(2, 'Enter your community or organization name.').max(120),
+  city: z.string().trim().max(60).default(''),
+  reason: z.string().trim().min(20, 'Tell us a little more (at least 20 characters).').max(1000),
+})
+
+export const fileUploadSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  dataUrl: z
+    .string()
+    .regex(/^data:(application\/pdf|image\/(png|jpe?g|webp)|application\/zip|text\/plain);base64,[A-Za-z0-9+/=]+$/, 'Upload a PDF, image, ZIP or text file.'),
 })
 
 export const uploadSchema = z.object({

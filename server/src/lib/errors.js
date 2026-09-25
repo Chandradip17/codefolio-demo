@@ -25,6 +25,25 @@ const HINT_STATUS = {
   'event/past': 409,
   'event/closed': 409,
   'event/capacity': 422,
+  'booking/own': 409,
+  'booking/self': 403,
+  'booking/state': 409,
+  'booking/decision': 422,
+  'auth/forbidden': 403,
+  'host/already': 409,
+  'host/pending': 409,
+  'host/missing': 404,
+  'host/reviewed': 409,
+  'host/self': 403,
+  'host/decision': 422,
+  'qr/not_approved': 409,
+  'checkin/invalid': 404,
+  'checkin/not_found': 404,
+  'checkin/wrong_event': 409,
+  'checkin/already': 409,
+  'checkin/revoked': 410,
+  'checkin/not_approved': 409,
+  'checkin/event_closed': 409,
 }
 
 // Turn a Supabase/PostgREST error into an HttpError.
@@ -77,6 +96,7 @@ export function errorHandler(err, req, res, next) {
     error: {
       code: err.code || 'internal',
       message: status >= 500 && !(err instanceof HttpError) ? 'Something went wrong.' : err.message,
+      ...(err instanceof HttpError && err.fields ? { fields: err.fields } : {}),
     },
   })
 }

@@ -66,6 +66,8 @@ export function toBooking(r) {
     attendeeEmail: r.attendee_email,
     event: r.event_snapshot,
     bookedAt: r.booked_at,
+    reviewedAt: r.reviewed_at || null,
+    reviewNote: r.review_note || null,
   }
 }
 
@@ -79,6 +81,9 @@ export function toUser(r) {
     chapter: r.chapter,
     bio: r.bio,
     createdAt: r.created_at,
+    username: r.username || null,
+    avatarUrl: r.avatar_url || null,
+    isAdmin: r.platform_role === 'admin',
   }
 }
 

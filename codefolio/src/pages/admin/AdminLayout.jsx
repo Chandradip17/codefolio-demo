@@ -8,6 +8,9 @@ const NAV = [
   { to: '/admin/events', label: 'Events', icon: 'calendar', end: true },
   { to: '/admin/events/new', label: 'Add Event', icon: 'plus' },
   { to: '/admin/bookings', label: 'Bookings', icon: 'ticket' },
+  { to: '/admin/checkin', label: 'Check-in', icon: 'scan' },
+  { to: '/admin/host-requests', label: 'Host requests', icon: 'shield', admin: true },
+  { to: '/dashboard', label: 'My tickets', icon: 'qr' },
   { to: '/admin/profile', label: 'Profile', icon: 'user' },
 ]
 
@@ -25,12 +28,12 @@ export default function AdminLayout() {
           </span>
           <div>
             <strong>{user.name}</strong>
-            <small>{user.chapter || 'Organizer'}</small>
+            <small>{user.isAdmin ? 'Platform admin' : user.chapter || 'Organizer'}</small>
           </div>
         </div>
         <nav>
           <ul>
-            {NAV.map((n) => (
+            {NAV.filter((n) => !n.admin || user.isAdmin).map((n) => (
               <li key={n.to}>
                 <NavLink to={n.to} end={n.end} className="side-link">
                   <Icon name={n.icon} size={18} />

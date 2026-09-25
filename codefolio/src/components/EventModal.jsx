@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Modal from './Modal'
 import Icon from './Icon'
+import ApplicationForm from './ApplicationForm'
 import { seatInfo } from './EventCard'
 import { Badge, Button, CategoryBadge, EmptyState, SourceBadge, StatusBadge } from './ui'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { useToast } from '../context/ToastContext'
 import { useCloseEvent } from '../hooks/useOpenEvent'
+import { rememberNext } from '../services/supabase'
 import { compactNumber, cx, formatDate, formatTime } from '../utils/format'
 import { fallbackImage } from '../data/images'
 
@@ -20,10 +22,18 @@ export function EventModalHost() {
   const event = id ? getEvent(id) : null
   const stillLoading = localStatus.loading || gdgStatus.loading || dfStatus.loading
   const [confirmed, setConfirmed] = useState(null)
+  const { user, ready } = useAuth()
+  const location = useLocation()
 
   useEffect(() => setConfirmed(null), [id])
 
   if (!id) return null
+  // A shared ?event= link opened while logged out: sign in first, then return here.
+  if (ready && !user) {
+    const here = location.pathname + location.search
+    rememberNext(here)
+    return <Navigate to="/login" replace state={{ from: here }} />
+  }
   if (!event) {
     return (
       <Modal open onClose={close} title="Event" size="sm">
@@ -38,7 +48,7 @@ export function EventModalHost() {
     )
   }
   return (
-    <Modal open onClose={close} title={confirmed ? 'Booking confirmed' : event.title} size="lg" hideTitle className="event-modal">
+    <Modal open onClose={close} title={confirmed ? 'Request submitted' : event.title} size="lg" hideTitle className="event-modal">
       {confirmed ? <BookingConfirmation booking={confirmed} onClose={close} /> : <EventDetails event={event} onBooked={setConfirmed} />}
     </Modal>
   )
@@ -60,13 +70,12 @@ function Row({ icon, label, children }) {
 
 function EventDetails({ event, onBooked }) {
   const { user } = useAuth()
-  const { bookEvent, myActiveBooking, ensureDetail } = useData()
+  const { myActiveBooking, myLastBooking, ensureDetail } = useData()
   const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const [seats, setSeats] = useState(1)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [step, setStep] = useState('details')
   const [imgFailed, setImgFailed] = useState(false)
 
   useEffect(() => {
@@ -78,20 +87,21 @@ function EventDetails({ event, onBooked }) {
   const soldOut = isLocal && event.availableSeats <= 0
   const cancelled = event.status === 'Cancelled'
   const existing = isLocal && myActiveBooking(event.id)
+  const last = isLocal && !existing && myLastBooking(event.id)
   const maxSeats = Math.max(1, Math.min(4, event.availableSeats || 1))
 
-  async function handleBook() {
-    setBusy(true)
-    setError('')
-    try {
-      const booking = await bookEvent(event.id, seats)
-      toast({ title: 'Seat booked', message: `${booking.bookingId} · ${event.title}` })
-      onBooked(booking)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setBusy(false)
-    }
+  if (step === 'apply') {
+    return (
+      <ApplicationForm
+        event={event}
+        seats={seats}
+        onBack={() => setStep('details')}
+        onSubmitted={(booking) => {
+          toast({ title: 'Request submitted', message: `${booking.bookingId} · the organizer will review it soon.` })
+          onBooked(booking)
+        }}
+      />
+    )
   }
 
   const loginToBook = () => navigate('/login', { state: { from: `${location.pathname}${location.search}` } })
@@ -121,25 +131,33 @@ function EventDetails({ event, onBooked }) {
         Login to Book
       </Button>
     )
-  } else if (user.role === 'organizer') {
+  } else if (event.createdBy === user.id) {
     cta = (
       <>
-        {event.createdBy === user.id && (
-          <Button size="lg" variant="secondary" className="btn--block" icon="edit" to={`/admin/events/${event.id}/edit`}>
-            Manage this event
-          </Button>
-        )}
+        <Button size="lg" variant="secondary" className="btn--block" icon="edit" to={`/admin/events/${event.id}/edit`}>
+          Manage this event
+        </Button>
+        <Button size="lg" variant="ghost" className="btn--block" icon="users" to={`/admin/bookings?for=${encodeURIComponent(event.id)}`}>
+          Review applications
+        </Button>
         <p className="cta-note">
-          <Icon name="info" size={14} /> Organizer accounts manage events and can't book seats. Use an attendee account to book.
+          <Icon name="info" size={14} /> This is your event, so you can't apply to it.
         </p>
       </>
     )
   } else if (existing) {
+    const pending = existing.status === 'Pending'
     cta = (
       <>
-        <div className="booked-pill">
-          <Icon name="checkCircle" size={18} /> You're booked · <code>{existing.bookingId}</code>
+        <div className={cx('booked-pill', pending && 'booked-pill--pending')}>
+          <Icon name={pending ? 'clock' : 'checkCircle'} size={18} />
+          {pending ? 'Request pending review' : existing.status === 'Attended' ? 'You attended' : "You're approved"} · <code>{existing.bookingId}</code>
         </div>
+        {pending && (
+          <p className="cta-note">
+            <Icon name="info" size={14} /> The organizer will approve or decline your request. Your QR appears once you&apos;re approved.
+          </p>
+        )}
         <Button size="lg" variant="secondary" className="btn--block" to="/dashboard">
           View My Bookings
         </Button>
@@ -166,9 +184,18 @@ function EventDetails({ event, onBooked }) {
             </button>
           </div>
         </div>
-        <Button size="lg" className="btn--block" icon="ticket" onClick={handleBook} loading={busy}>
-          Book My Seat{seats > 1 ? `s (${seats})` : ''}
+        <Button size="lg" className="btn--block" icon="ticket" onClick={() => setStep('apply')}>
+          {last?.status === 'Rejected' || last?.status === 'Removed' ? 'Apply again' : 'Book My Seat'}
+          {seats > 1 ? ` (${seats})` : ''}
         </Button>
+        <p className="cta-note">
+          <Icon name="info" size={14} />
+          {last?.status === 'Rejected'
+            ? ` Your last request (${last.bookingId}) wasn't approved${last.reviewNote ? `: “${last.reviewNote}”` : '.'}`
+            : last?.status === 'Removed'
+              ? ` You were removed from this event earlier (${last.bookingId}).`
+              : ' A short application goes to the organizer; your seat is confirmed once they approve it.'}
+        </p>
       </>
     )
   }
@@ -343,11 +370,6 @@ function EventDetails({ event, onBooked }) {
                 <p className="muted small">{compactNumber(event.registered)} builders have registered so far</p>
               )}
             </div>
-            {error && (
-              <p className="form-error" role="alert">
-                <Icon name="alert" size={15} /> {error}
-              </p>
-            )}
             <div className="side-ticket__cta">{cta}</div>
           </div>
         </aside>
@@ -361,16 +383,14 @@ function BookingConfirmation({ booking, onClose }) {
   const e = booking.event
   return (
     <div className="confirmation">
-      <div className="confetti" aria-hidden="true">
-        {Array.from({ length: 18 }, (_, i) => (
-          <i key={i} style={{ '--i': i }} />
-        ))}
-      </div>
       <div className="confirmation__check" aria-hidden="true">
         <Icon name="check" size={34} strokeWidth={3} />
       </div>
-      <h2 className="confirmation__title">Booking Confirmed! 🎉</h2>
-      <p className="muted">A confirmation has been added to your dashboard. See you there!</p>
+      <h2 className="confirmation__title">Request submitted</h2>
+      <p className="muted">
+        The organizer will review your application. You&apos;ll see the decision live in your dashboard, and your check-in QR appears there once
+        you&apos;re approved.
+      </p>
 
       <div className="pass">
         <div className="pass__top">
@@ -378,8 +398,8 @@ function BookingConfirmation({ booking, onClose }) {
             <p className="eyebrow">Booking ID</p>
             <p className="pass__id">{booking.bookingId}</p>
           </div>
-          <Badge tone="success" icon="check">
-            {booking.status}
+          <Badge tone="warn" icon="clock">
+            Pending review
           </Badge>
         </div>
         <div className="ticket__perf" aria-hidden="true" />
@@ -404,7 +424,7 @@ function BookingConfirmation({ booking, onClose }) {
             </dd>
           </div>
           <div>
-            <dt>Seats booked</dt>
+            <dt>Seats requested</dt>
             <dd>{booking.seats}</dd>
           </div>
           <div>

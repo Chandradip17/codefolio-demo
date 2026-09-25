@@ -1,12 +1,17 @@
 import { useMemo, useState } from 'react'
+import ActivityFeed from '../components/ActivityFeed'
 import BookingCard from '../components/BookingCard'
+import CheckInPass from '../components/CheckInPass'
+import FillingFast from '../components/FillingFast'
+import { LiveIndicator, LiveNumber } from '../components/LiveBits'
+import NextUpCard from '../components/NextUpCard'
 import { ConfirmDialog } from '../components/Modal'
 import Icon from '../components/Icon'
 import { Button, EmptyState, ErrorState, Segmented } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../context/DataContext'
 import { useToast } from '../context/ToastContext'
-import { formatDate, isPast } from '../utils/format'
+import { isPast } from '../utils/format'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -15,6 +20,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState('upcoming')
   const [target, setTarget] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [qrFor, setQrFor] = useState(null)
 
   const mine = useMemo(() => bookings.filter((b) => b.userId === user.id), [bookings, user.id])
   const eventById = useMemo(() => Object.fromEntries(events.map((e) => [e.id, e])), [events])
@@ -24,29 +30,34 @@ export default function Dashboard() {
     const past = []
     const cancelled = []
     for (const b of mine) {
-      if (b.status === 'Cancelled') cancelled.push(b)
+      if (['Cancelled', 'Rejected', 'Removed'].includes(b.status)) cancelled.push(b)
       else if (isPast(b.event.date) || b.status === 'Attended') past.push(b)
       else upcoming.push(b)
     }
-    upcoming.sort((a, b) => a.event.date.localeCompare(b.event.date))
+    upcoming.sort((a, b) => (a.event.date + a.event.time).localeCompare(b.event.date + b.event.time))
     return { upcoming, past, cancelled }
   }, [mine])
 
   const stats = useMemo(() => {
-    const active = mine.filter((b) => b.status !== 'Cancelled')
+    const active = mine.filter((b) => b.status === 'Confirmed' || b.status === 'Attended')
     return [
       { label: 'Upcoming', value: groups.upcoming.length, icon: 'calendar', tone: 'indigo' },
       { label: 'Total Booked', value: active.length, icon: 'ticket', tone: 'saffron' },
       { label: 'Cities', value: new Set(active.map((b) => b.event.city)).size, icon: 'pin', tone: 'coral' },
-      { label: 'Hackathons Attended', value: groups.past.filter((b) => b.event.category === 'hackathon').length, icon: 'trophy', tone: 'green' },
+      { label: 'Hackathons Attended', value: groups.past.filter((b) => b.event.category === 'hackathon' && b.status !== 'Pending').length, icon: 'trophy', tone: 'green' },
     ]
   }, [mine, groups])
 
   async function confirmCancel() {
     setBusy(true)
     try {
+      const wasPending = target.status === 'Pending'
       const b = await cancelBooking(target.id)
-      toast({ title: 'Booking cancelled', message: `${b.bookingId}: your ${b.seats > 1 ? 'seats have' : 'seat has'} been released.`, tone: 'info' })
+      toast(
+        wasPending
+          ? { title: 'Request withdrawn', message: `${b.bookingId}: the organizer won't review it now.`, tone: 'info' }
+          : { title: 'Booking cancelled', message: `${b.bookingId}: your ${b.seats > 1 ? 'seats have' : 'seat has'} been released.`, tone: 'info' },
+      )
       setTarget(null)
     } catch (e) {
       toast({ title: "Couldn't cancel", message: e.message, tone: 'error' })
@@ -56,7 +67,8 @@ export default function Dashboard() {
   }
 
   const list = groups[tab]
-  const next = groups.upcoming[0]
+  // The next event that's still going ahead (organizer hasn't cancelled it).
+  const next = groups.upcoming.find((b) => b.status === 'Confirmed' && eventById[b.eventId]?.status !== 'Cancelled')
 
   return (
     <div className="container page-pad">
@@ -66,9 +78,12 @@ export default function Dashboard() {
           <h1>Welcome back, {user.name.split(' ')[0]}!</h1>
           <p className="muted">Here are your upcoming developer events.</p>
         </div>
-        <Button to="/events" icon="search">
-          Find events
-        </Button>
+        <div className="dash-head__actions">
+          <LiveIndicator />
+          <Button to="/events" icon="search">
+            Find events
+          </Button>
+        </div>
       </header>
 
       <div className="kpis">
@@ -77,81 +92,91 @@ export default function Dashboard() {
             <span className="kpi__icon" aria-hidden="true">
               <Icon name={s.icon} size={20} />
             </span>
-            <strong className="kpi__value">{localStatus.loading ? '–' : s.value}</strong>
+            <strong className="kpi__value">{localStatus.loading ? '–' : <LiveNumber value={s.value} />}</strong>
             <span className="kpi__label">{s.label}</span>
           </div>
         ))}
       </div>
 
-      {next && (
-        <div className="next-up">
-          <Icon name="zap" size={18} />
-          <span>
-            Next up: <strong>{next.event.title}</strong> on {formatDate(next.event.date, { weekday: true })}
-          </span>
-        </div>
-      )}
+      <div className="dash-grid">
+        <div className="dash-main">
+          {next && <NextUpCard booking={next} liveEvent={eventById[next.eventId]} />}
 
-      <section aria-labelledby="bookings-h" className="dash-section">
-        <div className="section-head section-head--tight">
-          <h2 id="bookings-h">My Bookings</h2>
-          <Segmented
-            label="Booking filter"
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: 'upcoming', label: 'Upcoming', count: groups.upcoming.length },
-              { value: 'past', label: 'Past', count: groups.past.length },
-              { value: 'cancelled', label: 'Cancelled', count: groups.cancelled.length },
-            ]}
-          />
-        </div>
-
-        {localStatus.error ? (
-          <ErrorState message={localStatus.error} onRetry={loadLocal} />
-        ) : localStatus.loading ? (
-          <div className="booking-list">
-            {[0, 1].map((i) => (
-              <div key={i} className="skeleton" style={{ height: 150, borderRadius: 20 }} />
-            ))}
-          </div>
-        ) : list.length ? (
-          <div className="booking-list">
-            {list.map((b) => (
-              <BookingCard
-                key={b.id}
-                booking={b}
-                eventExists={Boolean(eventById[b.eventId])}
-                eventCancelled={eventById[b.eventId]?.status === 'Cancelled'}
-                onCancel={setTarget}
+          <section aria-labelledby="bookings-h" className="dash-section">
+            <div className="section-head section-head--tight">
+              <h2 id="bookings-h">My Bookings</h2>
+              <Segmented
+                label="Booking filter"
+                value={tab}
+                onChange={setTab}
+                options={[
+                  { value: 'upcoming', label: 'Upcoming', count: groups.upcoming.length },
+                  { value: 'past', label: 'Past', count: groups.past.length },
+                  { value: 'cancelled', label: 'Closed', count: groups.cancelled.length },
+                ]}
               />
-            ))}
-          </div>
-        ) : tab === 'upcoming' ? (
-          <EmptyState
-            icon="ticket"
-            title="No bookings yet"
-            message="Your next developer event is waiting for you."
-            action={
-              <Button to="/events" iconRight="arrowRight">
-                Explore Events
-              </Button>
-            }
-          />
-        ) : (
-          <EmptyState icon="calendar" title={`No ${tab} bookings`} message="Nothing to show here yet." />
-        )}
-      </section>
+            </div>
+
+            {localStatus.error ? (
+              <ErrorState message={localStatus.error} onRetry={loadLocal} />
+            ) : localStatus.loading ? (
+              <div className="booking-list">
+                {[0, 1].map((i) => (
+                  <div key={i} className="skeleton" style={{ height: 150, borderRadius: 20 }} />
+                ))}
+              </div>
+            ) : list.length ? (
+              <div className="booking-list">
+                {list.map((b) => (
+                  <BookingCard
+                    key={b.id}
+                    booking={b}
+                    liveEvent={eventById[b.eventId]}
+                    onCancel={setTarget}
+                    onShowQr={setQrFor}
+                  />
+                ))}
+              </div>
+            ) : tab === 'upcoming' ? (
+              <EmptyState
+                icon="ticket"
+                title="No bookings yet"
+                message="Your next developer event is waiting for you."
+                action={
+                  <Button to="/events" iconRight="arrowRight">
+                    Explore Events
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState icon="calendar" title={`No ${tab === 'cancelled' ? 'closed' : tab} bookings`} message="Nothing to show here yet." />
+            )}
+          </section>
+        </div>
+
+        <aside className="dash-aside" aria-label="Live updates">
+          <ActivityFeed />
+          <FillingFast />
+        </aside>
+      </div>
 
       <ConfirmDialog
         open={Boolean(target)}
         onClose={() => setTarget(null)}
         onConfirm={confirmCancel}
         busy={busy}
-        title="Cancel this booking?"
-        confirmLabel="Cancel Booking"
+        title={target?.status === 'Pending' ? 'Withdraw this request?' : 'Cancel this booking?'}
+        confirmLabel={target?.status === 'Pending' ? 'Withdraw Request' : 'Cancel Booking'}
         message={
-          target && (
+          target &&
+          (target.status === 'Pending' ? (
+            <>
+              <p>
+                You&apos;re about to withdraw your application to <strong>{target.event.title}</strong> ({target.bookingId}).
+              </p>
+              <p className="muted">The organizer won&apos;t see it anymore. You can apply again later.</p>
+            </>
+          ) : (
             <>
               <p>
                 You&apos;re about to cancel <strong>{target.event.title}</strong> ({target.bookingId}).
@@ -161,9 +186,10 @@ export default function Dashboard() {
                 are still available.
               </p>
             </>
-          )
+          ))
         }
       />
+      <CheckInPass booking={qrFor} open={Boolean(qrFor)} onClose={() => setQrFor(null)} />
     </div>
   )
 }

@@ -68,8 +68,20 @@ export function SourceBadge({ event }) {
 
 export function StatusBadge({ status }) {
   const tone =
-    { Confirmed: 'success', Published: 'success', Attended: 'info', Cancelled: 'danger', Completed: 'neutral', 'Sold Out': 'warn' }[status] ||
-    'neutral'
+    {
+      Confirmed: 'success',
+      Published: 'success',
+      Attended: 'info',
+      Cancelled: 'danger',
+      Completed: 'neutral',
+      'Sold Out': 'warn',
+      Pending: 'warn',
+      Rejected: 'danger',
+      Removed: 'danger',
+      pending: 'warn',
+      approved: 'success',
+      rejected: 'danger',
+    }[status] || 'neutral'
   return <Badge tone={tone}>{status}</Badge>
 }
 

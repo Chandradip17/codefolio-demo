@@ -138,6 +138,9 @@ export default function AdminEvents() {
                         <Button size="sm" variant="ghost" icon="edit" to={`/admin/events/${e.id}/edit`} aria-label={`Edit ${e.title}`}>
                           Edit
                         </Button>
+                        <Button size="sm" variant="ghost" icon="fileText" to={`/admin/events/${e.id}/application`} aria-label={`Application form for ${e.title}`}>
+                          Form
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"

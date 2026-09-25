@@ -1,0 +1,83 @@
+/* Codefolio design tokens.
+   Accent = logo indigo; signal = logo saffron dot (used sparingly). */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-head: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  --r-1: 6px;
+  --r-2: 8px;
+  --r-3: 12px;
+  --gutter: 24px;
+  --topbar-h: 60px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+:root,
+:root[data-theme='light'] {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #fafaf8;
+  --sunken: #efeee9;
+  --border: #e3e1da;
+  --border-strong: #cdcac1;
+  --text: #15171c;
+  --text-2: #3a3e47;
+  --muted: #5f6570;
+  --faint: #8b909a;
+
+  --accent: #3654ff;
+  --accent-hover: #2842e6;
+  --accent-text: #2a44e0;
+  --accent-soft: #edf0ff;
+  --on-accent: #ffffff;
+  --signal: #f5a524;
+
+  --ok: #17784a;
+  --ok-soft: #e6f4ec;
+  --warn: #8a5600;
+  --warn-soft: #fff3d6;
+  --danger: #b42318;
+  --danger-soft: #fdebe9;
+
+  --shadow-1: 0 1px 2px rgba(21, 23, 28, 0.06);
+  --shadow-2: 0 8px 24px rgba(21, 23, 28, 0.1), 0 1px 3px rgba(21, 23, 28, 0.06);
+  --overlay: rgba(21, 23, 28, 0.45);
+}
+
+:root[data-theme='dark'] {
+  --bg: #101217;
+  --surface: #161920;
+  --surface-2: #1b1f27;
+  --sunken: #0c0e12;
+  --border: #262b35;
+  --border-strong: #363c49;
+  --text: #e8eaee;
+  --text-2: #c5c9d1;
+  --muted: #959cab;
+  --faint: #6b7280;
+
+  --accent: #4760ff;
+  --accent-hover: #5a71ff;
+  --accent-text: #93a1ff;
+  --accent-soft: rgba(111, 131, 255, 0.14);
+  --on-accent: #ffffff;
+  --signal: #f5b13a;
+
+  --ok: #5fd394;
+  --ok-soft: rgba(95, 211, 148, 0.12);
+  --warn: #f3bd55;
+  --warn-soft: rgba(243, 189, 85, 0.12);
+  --danger: #ff8a7e;
+  --danger-soft: rgba(255, 138, 126, 0.12);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --overlay: rgba(0, 0, 0, 0.6);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: 16px;
+  }
+}

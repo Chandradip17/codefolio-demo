@@ -281,3 +281,10 @@ grant execute on function public.book_seats(uuid, text, integer)   to service_ro
 grant execute on function public.cancel_booking(uuid, uuid)        to service_role;
 grant execute on function public.set_event_capacity(text, integer) to service_role;
 grant execute on function public.delete_event(text)                to service_role;
+
+-- ---------- hardening (Supabase security advisor) ----------
+alter function public.cf_raise(text, text) set search_path = public;
+alter function public.cf_booking_code() set search_path = public;
+alter function public.cf_event_snapshot(public.events) set search_path = public;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.sync_booking_snapshots() from public, anon, authenticated;

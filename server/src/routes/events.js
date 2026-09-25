@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { admin } from '../lib/supabase.js'
 import { HttpError, must, notConfigured } from '../lib/errors.js'
 import { requireAuth, requireRole } from '../lib/auth.js'
-import { eventColumns, toEvent } from '../lib/mappers.js'
+import { eventColumns, toBooking, toEvent } from '../lib/mappers.js'
+import { publish } from '../lib/realtime.js'
 import { eventSchema, newEventSchema } from '../lib/validate.js'
+import { eventFormHandler } from './hosting.js'
 
 const router = Router()
 
@@ -26,6 +28,9 @@ router.get('/', async (req, res) => {
   const rows = must(await admin.from('events').select('*').order('date').order('start_time'))
   res.set('Cache-Control', 'no-store').json({ events: rows.map(toEvent) })
 })
+
+// GET /api/events/:id/form: the application form applicants fill in (members only)
+router.get('/:id/form', requireAuth, eventFormHandler)
 
 // GET /api/events/:id
 router.get('/:id', async (req, res) => {
@@ -52,7 +57,9 @@ router.post('/', ...organizerOnly, async (req, res) => {
       .select('*')
       .single(),
   )
-  res.status(201).json({ event: toEvent(row) })
+  const event = toEvent(row)
+  res.status(201).json({ event })
+  publish('event.updated', { event })
 })
 
 // PUT /api/events/:id (organizer, owner)
@@ -64,21 +71,31 @@ router.put('/:id', ...organizerOnly, async (req, res) => {
     must(await admin.rpc('set_event_capacity', { p_event: current.id, p_capacity: input.capacity }))
   }
   const row = must(await admin.from('events').update(eventColumns(input)).eq('id', current.id).select('*').single())
-  res.json({ event: toEvent(row) })
+  const event = toEvent(row)
+  res.json({ event })
+  publish('event.updated', { event })
 })
 
 // POST /api/events/:id/cancel (organizer, owner): stops new bookings
 router.post('/:id/cancel', ...organizerOnly, async (req, res) => {
   const current = await loadOwned(req.params.id, req.user)
   const row = must(await admin.from('events').update({ status: 'Cancelled' }).eq('id', current.id).select('*').single())
-  res.json({ event: toEvent(row) })
+  const event = toEvent(row)
+  res.json({ event })
+  publish('event.updated', { event })
 })
 
 // DELETE /api/events/:id (organizer, owner): permanent; active bookings become Cancelled
 router.delete('/:id', ...organizerOnly, async (req, res) => {
   const current = await loadOwned(req.params.id, req.user)
+  const affected = must(await admin.from('bookings').select('*').eq('event_id', current.id).eq('status', 'Confirmed'))
   must(await admin.rpc('delete_event', { p_event: current.id }))
   res.status(204).end()
+  publish('event.deleted', { id: current.id })
+  for (const row of affected) {
+    const booking = { ...toBooking(row), status: 'Cancelled', eventId: null }
+    publish('booking.updated', { booking }, [booking.userId, current.created_by])
+  }
 })
 
 export default router

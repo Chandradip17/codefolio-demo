@@ -1,25 +1,33 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BarList, ColumnChart } from '../../components/Charts'
 import Icon from '../../components/Icon'
 import { Button, ErrorState, StatusBadge } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { useData } from '../../context/DataContext'
+import * as api from '../../services/api'
 import { addDays, formatDate, formatDateTime, isPast } from '../../utils/format'
 import { eventStatus } from './adminUtils'
 
 export default function AdminOverview() {
   const { user } = useAuth()
-  const { myEvents: events, bookings, catalogue, localStatus, loadLocal } = useData()
+  const { myEvents: events, hostBookings: bookings, catalogue, localStatus, loadLocal } = useData()
+  const [platform, setPlatform] = useState(null)
+
+  // Platform admins also see platform-wide counts (host requests to review etc.).
+  useEffect(() => {
+    if (!user.isAdmin) return
+    api.platformOverview().then(setPlatform, () => setPlatform(null))
+  }, [user.isAdmin])
 
   const kpis = useMemo(() => {
     const upcoming = events.filter((e) => !isPast(e.date) && e.status !== 'Cancelled')
     return [
       { label: 'Total Events', value: events.length, icon: 'calendar', tone: 'indigo' },
       { label: 'Upcoming Events', value: upcoming.length, icon: 'zap', tone: 'saffron' },
-      { label: 'Total Bookings', value: bookings.filter((b) => b.status !== 'Cancelled').length, icon: 'ticket', tone: 'green' },
+      { label: 'Approved Bookings', value: bookings.filter((b) => b.status === 'Confirmed' || b.status === 'Attended').length, icon: 'ticket', tone: 'green' },
+      { label: 'Pending Review', value: bookings.filter((b) => b.status === 'Pending').length, icon: 'clock', tone: 'coral', to: '/admin/bookings?status=Pending' },
       { label: 'Seats Available', value: upcoming.reduce((s, e) => s + e.availableSeats, 0).toLocaleString('en-IN'), icon: 'users', tone: 'indigo' },
-      { label: 'Cancelled Events', value: events.filter((e) => e.status === 'Cancelled').length, icon: 'ban', tone: 'coral' },
     ]
   }, [events, bookings])
 
@@ -32,7 +40,7 @@ export default function AdminOverview() {
       return { start, end, value: 0 }
     })
     for (const b of bookings) {
-      if (b.status === 'Cancelled') continue
+      if (b.status !== 'Confirmed' && b.status !== 'Attended') continue
       const t = new Date(b.bookedAt)
       const w = weeks.find((w) => t > w.start && t <= w.end)
       if (w) w.value += b.seats
@@ -55,7 +63,7 @@ export default function AdminOverview() {
       .map(([label, value]) => ({ label, value }))
   }, [catalogue])
 
-  const recent = bookings.filter((b) => b.status === 'Confirmed').slice(0, 5)
+  const recent = bookings.filter((b) => b.status !== 'Cancelled').slice(0, 5)
   const upcoming = events
     .filter((e) => !isPast(e.date))
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -77,16 +85,60 @@ export default function AdminOverview() {
       </header>
 
       <div className="kpis kpis--5">
-        {kpis.map((k) => (
-          <div key={k.label} className={`kpi kpi--${k.tone}`}>
-            <span className="kpi__icon" aria-hidden="true">
-              <Icon name={k.icon} size={20} />
-            </span>
-            <strong className="kpi__value">{localStatus.loading ? '–' : k.value}</strong>
-            <span className="kpi__label">{k.label}</span>
-          </div>
-        ))}
+        {kpis.map((k) => {
+          const body = (
+            <>
+              <span className="kpi__icon" aria-hidden="true">
+                <Icon name={k.icon} size={20} />
+              </span>
+              <strong className="kpi__value">{localStatus.loading ? '–' : k.value}</strong>
+              <span className="kpi__label">{k.label}</span>
+            </>
+          )
+          return k.to ? (
+            <Link key={k.label} to={k.to} className={`kpi kpi--${k.tone} kpi--link`}>
+              {body}
+            </Link>
+          ) : (
+            <div key={k.label} className={`kpi kpi--${k.tone}`}>
+              {body}
+            </div>
+          )
+        })}
       </div>
+
+      {user.isAdmin && platform && (
+        <section className="card platform-strip" aria-label="Platform">
+          <div className="card__head">
+            <h3>
+              <Icon name="shield" size={17} /> Platform
+            </h3>
+            <Link to="/admin/host-requests" className="link link--arrow">
+              Host requests <Icon name="arrowRight" size={14} />
+            </Link>
+          </div>
+          <div className="event-summary__nums">
+            <span>
+              <strong>{platform.pendingHostRequests}</strong> host requests pending
+            </span>
+            <span>
+              <strong>{platform.hosts}</strong> approved hosts
+            </span>
+            <span>
+              <strong>{platform.users}</strong> members
+            </span>
+            <span>
+              <strong>{platform.events}</strong> events
+            </span>
+            <span>
+              <strong>{platform.pendingBookings}</strong> applications pending
+            </span>
+            <span>
+              <strong>{platform.attendance}</strong> check-ins
+            </span>
+          </div>
+        </section>
+      )}
 
       <div className="chart-grid">
         <ColumnChart title="Bookings over time" subtitle="Seats booked per week, last 8 weeks" data={weekly} valueLabel="Seats" />
@@ -122,7 +174,7 @@ export default function AdminOverview() {
         </section>
         <section className="card">
           <div className="card__head">
-            <h3>Latest bookings</h3>
+            <h3>Latest applications</h3>
             <Link to="/admin/bookings" className="link link--arrow">
               All bookings <Icon name="arrowRight" size={14} />
             </Link>
@@ -135,8 +187,8 @@ export default function AdminOverview() {
                   <small className="truncate">{b.event.title}</small>
                 </div>
                 <span className="mini-list__right">
-                  <code className="small">{b.bookingId}</code>
                   <small className="muted">{formatDateTime(b.bookedAt).split(',')[0]}</small>
+                  <StatusBadge status={b.status} />
                 </span>
               </li>
             ))}

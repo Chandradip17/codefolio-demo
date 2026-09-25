@@ -42,13 +42,13 @@ async function signIn(email, password) {
 // POST /api/auth/signup
 router.post('/signup', authLimiter, async (req, res) => {
   const input = signupSchema.parse(req.body)
-  const { error } = await admin.auth.admin.createUser({
+  const { data: created, error } = await admin.auth.admin.createUser({
     email: input.email,
     password: input.password,
     // Accounts are confirmed immediately for a smooth demo. For production, switch to
     // anonClient().auth.signUp() and enable "Confirm email" in Supabase Auth settings.
     email_confirm: true,
-    user_metadata: { name: input.name, role: input.role, city: input.city, chapter: input.chapter, bio: input.bio },
+    user_metadata: { name: input.name, city: input.city, chapter: input.chapter, bio: input.bio },
   })
   if (error) {
     if (/already|registered|exists/i.test(error.message)) {
@@ -57,8 +57,22 @@ router.post('/signup', authLimiter, async (req, res) => {
     if (/password/i.test(error.message)) throw new HttpError(422, 'validation', error.message)
     throw new HttpError(500, 'auth/signup_failed', 'Could not create the account.', error.message)
   }
+  // Choosing "Organizer" at sign-up doesn't grant hosting rights: it files a host
+  // request that a platform admin must approve (no bypassing the approval system).
+  let hostRequest = null
+  if (input.role === 'organizer') {
+    const { data: hr, error: hrErr } = await admin.rpc('request_host', {
+      p_user: created.user.id,
+      p_type: 'event',
+      p_org: input.chapter,
+      p_city: input.city,
+      p_reason: input.bio,
+    })
+    if (hrErr) console.warn('[auth] host request at signup failed:', hrErr.message)
+    hostRequest = hr ? { status: 'pending' } : null
+  }
   const { session, user } = await signIn(input.email, input.password)
-  res.status(201).json({ user: await profileFor(user.id), session: toSession(session) })
+  res.status(201).json({ user: await profileFor(user.id), session: toSession(session), hostRequest })
 })
 
 // POST /api/auth/login

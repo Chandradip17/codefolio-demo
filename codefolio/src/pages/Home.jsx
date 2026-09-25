@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../components/Icon'
 import EventGrid from '../components/EventGrid'
@@ -10,14 +10,7 @@ import { useOpenEvent } from '../hooks/useOpenEvent'
 import { CHAPTERS } from '../data/chapters'
 import { PHOTOS, unsplash } from '../data/images'
 import { dateParts, formatTime, todayISO } from '../utils/format'
-
-// Platform stats: demo numbers for now, ready to be swapped for an API call.
-const STATS = [
-  { value: '500+', label: 'Events Hosted', icon: 'calendar' },
-  { value: '50+', label: 'GDG Chapters', icon: 'users' },
-  { value: '10K+', label: 'Seats Booked', icon: 'ticket' },
-  { value: '25+', label: 'Cities', icon: 'pin' },
-]
+import { platformStats } from '../services/api'
 
 const SECTIONS = [
   {
@@ -149,7 +142,7 @@ function Hero() {
 }
 
 export default function Home() {
-  const { catalogue, localStatus, gdgStatus, dfStatus, refreshLive, loadLocal } = useData()
+  const { catalogue, gdg, localStatus, gdgStatus, dfStatus, refreshLive, loadLocal } = useData()
   const byCategory = useMemo(() => {
     const out = {}
     const today = todayISO()
@@ -173,6 +166,29 @@ export default function Home() {
     return m
   }, [catalogue])
 
+  // Real numbers only: database counts (sample content excluded) + live listings.
+  const [db, setDb] = useState(null)
+  useEffect(() => {
+    platformStats().then(setDb).catch(() => setDb(false))
+  }, [])
+  const stats = useMemo(() => {
+    const live = catalogue.filter((e) => e.source !== 'codefolio')
+    const chapters = new Set(live.filter((e) => e.source === 'gdg').map((e) => e.organizerChapter)).size
+    const cities = new Set(
+      catalogue
+        .filter((e) => (e.source !== 'codefolio' || !e.isSample) && e.city && e.city !== 'Online')
+        .map((e) => e.city.toLowerCase()),
+    ).size
+    const n = (v) => (v == null ? '–' : Number(v).toLocaleString('en-IN'))
+    return [
+      { value: db ? n(db.events_hosted) : '–', label: 'Events Hosted', icon: 'calendar' },
+      // A feed that's still loading or unavailable shows "–", never a misleading 0.
+      { value: gdgStatus.loading || !gdg.length ? '–' : n(chapters), label: 'GDG Chapters', icon: 'users' },
+      { value: db ? n(db.seats_booked) : '–', label: 'Seats Booked', icon: 'ticket' },
+      { value: gdgStatus.loading || dfStatus.loading || !gdg.length ? '–' : n(cities), label: 'Cities', icon: 'pin' },
+    ]
+  }, [db, catalogue, gdg, gdgStatus.loading, dfStatus.loading])
+
   const loading = localStatus.loading || gdgStatus.loading || dfStatus.loading
   const allFailed = localStatus.error && gdgStatus.error && dfStatus.error
 
@@ -182,7 +198,7 @@ export default function Home() {
 
       <section className="stats-band" aria-label="Codefolio in numbers">
         <div className="container stats">
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <div key={s.label} className="stat">
               <span className="stat__icon" aria-hidden="true">
                 <Icon name={s.icon} size={20} />
