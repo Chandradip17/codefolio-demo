@@ -78,6 +78,7 @@ export function StatusBadge({ status }) {
       Pending: 'warn',
       Rejected: 'danger',
       Removed: 'danger',
+      Draft: 'warn',
       pending: 'warn',
       approved: 'success',
       rejected: 'danger',
@@ -175,6 +176,8 @@ export function Segmented({ options, value, onChange, label, size }) {
             aria-checked={active}
             className={cx('segmented__opt', active && 'is-active')}
             onClick={() => onChange(opt.value)}
+            disabled={opt.disabled}
+            title={opt.title}
           >
             {opt.icon && <Icon name={opt.icon} size={15} />}
             {opt.label}

@@ -74,7 +74,9 @@ try {
       token: host.token,
       body: {
         title: 'Smoke Hack Night', category: 'hackathon', mode: 'In-person', city: 'Pune', venue: 'Smoke Hall',
-        date: inDays(5), time: '18:00', organizerChapter: 'Smoke Test Club', capacity: 2,
+        date: inDays(5), time: '18:00', endDate: inDays(6), organizerChapter: 'Smoke Test Club', capacity: 2,
+        applicationsOpenAt: new Date(Date.now() - 3600e3).toISOString(), applicationsCloseAt: new Date(Date.now() + 2 * 86400e3).toISOString(),
+        teamMin: 1, teamMax: 4, theme: 'Smoke testing',
         description: 'Temporary hackathon created by the phase 2 smoke test. Safe to delete.',
       },
     })
@@ -98,7 +100,7 @@ try {
     assert.equal((await call('GET', `/events/${event.id}/form`, { token: att.token })).data.form.questions.length, 4)
   })
   await step('answers are validated per question (422 with field errors)', async () => {
-    const r = await call('POST', '/bookings', { token: att.token, body: { eventId: event.id, seats: 1, answers: { full_name: 'Smoke Attendee', track: ['Blockchain'] } } })
+    const r = await call('POST', '/bookings', { token: att.token, body: { eventId: event.id, seats: 1, participation: 'solo', answers: { full_name: 'Smoke Attendee', track: ['Blockchain'] } } })
     assert.equal(r.status, 422)
     assert.ok(r.data.error.fields.why && r.data.error.fields.track)
   })
@@ -108,7 +110,7 @@ try {
     cleanup.files.push(up.data.file.path)
     const r = await call('POST', '/bookings', {
       token: att.token,
-      body: { eventId: event.id, seats: 1, answers: { full_name: 'Smoke Attendee', why: 'To ship something in one night.', track: ['AI', 'Web'], resume: up.data.file } },
+      body: { eventId: event.id, seats: 1, participation: 'solo', answers: { full_name: 'Smoke Attendee', why: 'To ship something in one night.', track: ['AI', 'Web'], resume: up.data.file } },
     })
     assert.equal(r.status, 201, JSON.stringify(r.data))
     booking = r.data.booking

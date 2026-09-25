@@ -108,9 +108,12 @@ export function DataProvider({ children }) {
       if (type === 'event.updated') {
         const ev = data.event
         const prev = evs.find((e) => e.id === ev.id)
-        setEvents((list) => upsert(list, ev))
+        // Broadcasts never carry the host's UPI details: keep the copy we already have.
+        setEvents((list) => upsert(list, prev?.payment && !ev.payment ? { ...ev, payment: prev.payment } : ev))
         pushActivity(diffEvent(prev, ev, { me, myEventIds, myCity: me?.city }))
       } else if (type === 'event.deleted') {
+        // A host's own event moved back to draft: they keep it, everyone else drops it.
+        if (data.draft && data.createdBy === me?.id) return
         const prev = evs.find((e) => e.id === data.id)
         setEvents((list) => list.filter((e) => e.id !== data.id))
         if (prev && myEventIds.has(data.id) && prev.createdBy !== me?.id) {
@@ -128,6 +131,19 @@ export function DataProvider({ children }) {
           const prev = hbks.find((x) => x.id === b.id)
           setHostBookings((list) => upsert(list, b))
           if (b.userId !== me?.id) pushActivity(diffBooking(prev, b, { me }))
+        }
+      } else if (type === 'team.updated') {
+        // Someone joined or left a team: refresh the roster on every matching booking.
+        const t = data.team
+        const mine = bks.find((b) => b.team?.id === t.id && ['Pending', 'Confirmed', 'Attended'].includes(b.status))
+        const withTeam = (list) => list.map((b) => (b.team?.id === t.id ? { ...b, team: t } : b))
+        setBookings(withTeam)
+        setHostBookings(withTeam)
+        if (mine && me && t.size > mine.team.size) {
+          const joined = t.members.find((m) => !mine.team.members.some((x) => x.userId === m.userId))
+          if (joined && joined.userId !== me.id) {
+            pushActivity([{ key: `team:${t.id}:${joined.userId}`, tone: 'success', icon: 'users', title: `${joined.name} joined ${t.name}`, text: `${t.size} members now`, eventId: mine.eventId, toast: true }])
+          }
         }
       } else if (type === 'host.request.updated') {
         const r = data.request
@@ -238,8 +254,8 @@ export function DataProvider({ children }) {
   const replaceEvent = (ev) => setEvents((list) => list.map((e) => (e.id === ev.id ? ev : e)))
 
   // Sends an application; the host approves it before any seat is taken.
-  const bookEvent = useCallback(async (eventId, seats, answers) => {
-    const { booking, event } = await api.createBooking(eventId, seats, answers)
+  const bookEvent = useCallback(async (eventId, seats, answers, extra) => {
+    const { booking, event } = await api.createBooking(eventId, seats, answers, extra)
     if (event) replaceEvent(event)
     setBookings((b) => [booking, ...b.filter((x) => x.id !== booking.id)])
     pushActivity(
@@ -322,7 +338,7 @@ export function DataProvider({ children }) {
 
   // Public catalogue: upcoming Codefolio events + both live feeds.
   const catalogue = useMemo(() => {
-    const local = events.filter((e) => !isPast(e.date))
+    const local = events.filter((e) => e.status !== 'Draft' && !isPast(e.endDate || e.date))
     const today = todayISO()
     // Upcoming events by start time; already-running ones go after them.
     const key = (e) => `${e.date < today ? '1' : '0'}${e.date}${e.time || ''}`

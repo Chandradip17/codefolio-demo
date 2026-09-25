@@ -117,7 +117,12 @@ uploadRouter.post('/application-file', async (req, res) => {
 // ---------- event form for applicants: GET /api/events/:id/form ----------
 export async function eventFormHandler(req, res) {
   const ev = must(await admin.from('events').select('*').eq('id', req.params.id).maybeSingle())
-  if (!ev) throw new HttpError(404, 'event/missing', 'Event not found.')
-  res.set('Cache-Control', 'no-store').json({ form: await formFor(ev) })
+  if (!ev || ev.status === 'Draft') throw new HttpError(404, 'event/missing', 'Event not found.')
+  const fee = ev.application_fee || 0
+  res.set('Cache-Control', 'no-store').json({
+    form: await formFor(ev),
+    // Where to pay (members only; not in the public event list).
+    payment: fee > 0 ? { fee, upiId: ev.upi_id, upiNumber: ev.upi_number, qrUrl: ev.upi_qr_url } : null,
+  })
 }
 

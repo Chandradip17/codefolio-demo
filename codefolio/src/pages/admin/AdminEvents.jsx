@@ -64,7 +64,7 @@ export default function AdminEvents() {
           aria-label="Filter by status"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          options={['All', 'Published', 'Sold Out', 'Completed', 'Cancelled'].map((s) => ({ value: s, label: s === 'All' ? 'All statuses' : s }))}
+          options={['All', 'Published', 'Draft', 'Sold Out', 'Completed', 'Cancelled'].map((s) => ({ value: s, label: s === 'All' ? 'All statuses' : s }))}
         />
       </div>
 
@@ -145,7 +145,8 @@ export default function AdminEvents() {
                           size="sm"
                           variant="ghost"
                           icon="ban"
-                          disabled={st === 'Cancelled' || st === 'Completed'}
+                          disabled={st === 'Cancelled' || st === 'Completed' || st === 'Draft'}
+                          title={st === 'Draft' ? 'Drafts aren’t public. Delete the draft instead.' : undefined}
                           onClick={() => setDialog({ kind: 'cancel', event: e })}
                           aria-label={`Cancel ${e.title}`}
                         >

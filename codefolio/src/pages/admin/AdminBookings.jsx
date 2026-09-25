@@ -113,6 +113,44 @@ function AnswersModal({ booking, onClose, onAction }) {
             <strong>Your note:</strong> {booking.reviewNote}
           </p>
         )}
+        {data?.team && (
+          <div className="answers__team">
+            <p className="small">
+              <Icon name="users" size={14} /> Team <strong>{data.team.name}</strong> · <code className="team-code">{data.team.code}</code> ·{' '}
+              {data.team.size}
+              {data.teamLimits ? ` of ${data.teamLimits.max}` : ''} members
+              {data.teamLimits && data.team.size < data.teamLimits.min && (
+                <span className="answers__warn"> · below the minimum of {data.teamLimits.min}</span>
+              )}
+            </p>
+            <p className="small muted">
+              {data.team.members.map((m) => `${m.name}${m.leader ? ' (leader)' : ''}`).join(', ')}
+            </p>
+          </div>
+        )}
+        {data?.payment && (
+          <div className="answers__team">
+            <p className="small">
+              <Icon name="ticket" size={14} /> Application fee <strong>₹{data.payment.amount.toLocaleString('en-IN')}</strong> · UPI transaction ID{' '}
+              <code>{data.payment.ref}</code>
+            </p>
+            <p className="small muted">
+              {data.payment.proof?.url ? (
+                <a className="link" href={data.payment.proof.url} target="_blank" rel="noopener noreferrer">
+                  <Icon name="fileText" size={13} /> Payment screenshot <Icon name="external" size={12} />
+                </a>
+              ) : (
+                'No screenshot attached.'
+              )}{' '}
+              Match the UTR in your UPI app before approving.
+            </p>
+          </div>
+        )}
+        {data?.participation === 'solo' && (
+          <p className="small">
+            <Icon name="user" size={14} /> Participating solo
+          </p>
+        )}
 
         {error ? (
           <p className="form-error" role="alert">
@@ -205,10 +243,10 @@ export default function AdminBookings() {
   const seats = rows.filter((b) => b.status === 'Confirmed' || b.status === 'Attended').reduce((s, b) => s + b.seats, 0)
 
   function exportCsv() {
-    const head = ['Attendee Name', 'Email', 'Event', 'Booking ID', 'Applied', 'Seats', 'Status', 'Reviewed', 'Note']
+    const head = ['Attendee Name', 'Email', 'Event', 'Booking ID', 'Applied', 'Seats', 'Status', 'Participation', 'Team', 'Team code', 'Fee (₹)', 'UPI UTR', 'Reviewed', 'Note']
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const body = rows.map((b) =>
-      [b.attendeeName, b.attendeeEmail, b.event.title, b.bookingId, b.bookedAt, b.seats, b.status, b.reviewedAt || '', b.reviewNote || ''].map(esc).join(','),
+      [b.attendeeName, b.attendeeEmail, b.event.title, b.bookingId, b.bookedAt, b.seats, b.status, b.participation || '', b.team?.name || '', b.team?.code || '', b.feeAmount ?? '', b.paymentRef || '', b.reviewedAt || '', b.reviewNote || ''].map(esc).join(','),
     )
     const blob = new Blob([[head.join(','), ...body].join('\n')], { type: 'text/csv' })
     const a = document.createElement('a')
@@ -366,7 +404,21 @@ export default function AdminBookings() {
                     <span className="avatar avatar--sm" aria-hidden="true">
                       {b.attendeeName.slice(0, 1)}
                     </span>
-                    <strong>{b.attendeeName}</strong>
+                    <span>
+                      <strong>{b.attendeeName}</strong>
+                      {b.team ? (
+                        <small className="muted">
+                          Team {b.team.name} · {b.team.size}
+                        </small>
+                      ) : (
+                        b.participation === 'solo' && <small className="muted">Solo</small>
+                      )}
+                      {b.feeAmount ? (
+                        <small className="muted">
+                          ₹{b.feeAmount.toLocaleString('en-IN')} · UTR {b.paymentRef}
+                        </small>
+                      ) : null}
+                    </span>
                   </td>
                   <td data-label="Email" className="break">
                     {b.attendeeEmail}

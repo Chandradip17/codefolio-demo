@@ -33,7 +33,12 @@ function Barcode({ value }) {
   )
 }
 
-function CopyId({ id }) {
+// Copies a code to the clipboard (booking ID, team code…).
+export function CopyCode({ value, label = 'booking ID' }) {
+  return <CopyId id={value} label={label} />
+}
+
+function CopyId({ id, label = 'booking ID' }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -61,7 +66,7 @@ function CopyId({ id }) {
     }
   }
   return (
-    <button type="button" className={cx('bcard__copy', copied && 'is-copied')} onClick={copy} aria-label={copied ? 'Booking ID copied' : `Copy booking ID ${id}`}>
+    <button type="button" className={cx('bcard__copy', copied && 'is-copied')} onClick={copy} aria-label={copied ? `${label[0].toUpperCase()}${label.slice(1)} copied` : `Copy ${label} ${id}`}>
       <code>{id}</code>
       <Icon name={copied ? 'check' : 'copy'} size={14} />
       <span className="sr-only" aria-live="polite">
@@ -185,6 +190,27 @@ export default function BookingCard({ booking, liveEvent, onCancel, onShowQr }) 
         {eventCancelled && ['Confirmed', 'Pending'].includes(booking.status) && (
           <p className="bcard__note">
             <Icon name="info" size={14} /> The organizer cancelled this event. No action is needed on your side.
+          </p>
+        )}
+        {booking.team && (pending || active) && !past && (
+          <p className="bcard__note bcard__team">
+            <Icon name="users" size={14} />
+            <span>
+              Team <strong>{booking.team.name}</strong> · {booking.team.size} {booking.team.size === 1 ? 'member' : 'members'}
+              {booking.team.leaderId === booking.userId ? ' · you lead it' : ''}
+            </span>
+            <CopyCode value={booking.team.code} label="team code" />
+          </p>
+        )}
+        {booking.feeAmount ? (
+          <p className="bcard__note">
+            <Icon name="ticket" size={14} /> Fee ₹{booking.feeAmount.toLocaleString('en-IN')} paid by UPI · UTR <code>{booking.paymentRef}</code>
+            {pending ? ' · awaiting verification' : ''}
+          </p>
+        ) : null}
+        {booking.participation === 'solo' && (pending || active) && !past && (
+          <p className="bcard__note">
+            <Icon name="user" size={14} /> Participating solo
           </p>
         )}
         {pending && !past && (

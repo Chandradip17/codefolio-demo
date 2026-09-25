@@ -233,7 +233,8 @@ export async function platformStats() {
 }
 
 // ---------- events (Codefolio-hosted) ----------
-export const listEvents = async () => (await request('/events', { auth: false })).events
+// Signed in, the list also includes the member's own drafts (hidden from everyone else).
+export const listEvents = async () => (await request('/events')).events
 export const createEvent = async (input) => (await request('/events', { method: 'POST', body: input })).event
 export const updateEvent = async (id, input) => (await request(`/events/${encodeURIComponent(id)}`, { method: 'PUT', body: input })).event
 export const cancelEvent = async (id) => (await request(`/events/${encodeURIComponent(id)}/cancel`, { method: 'POST' })).event
@@ -241,9 +242,16 @@ export const deleteEvent = (id) => request(`/events/${encodeURIComponent(id)}`, 
 
 // ---------- bookings (requests → approved seats) ----------
 export const myBookings = async () => (await request('/bookings/me')).bookings
-export const createBooking = (eventId, seats, answers = {}) => request('/bookings', { method: 'POST', body: { eventId, seats, answers } })
+// extra: hackathon participation { participation, teamName?, teamCode? } and/or paid-event
+// payment { paymentRef, paymentProof? }
+export const createBooking = (eventId, seats, answers = {}, extra = {}) =>
+  request('/bookings', { method: 'POST', body: { eventId, seats, answers, ...extra } })
+export const teamLookup = async (eventId, code) =>
+  (await request(`/bookings/team-lookup?event=${encodeURIComponent(eventId)}&code=${encodeURIComponent(code)}`)).team
 export const cancelBooking = (id) => request(`/bookings/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 export const eventForm = async (eventId) => (await request(`/events/${encodeURIComponent(eventId)}/form`)).form
+// The form plus where to pay (paid events only): { form, payment: { fee, upiId, upiNumber, qrUrl } | null }
+export const eventApplication = (eventId) => request(`/events/${encodeURIComponent(eventId)}/form`)
 export const bookingCredential = async (id) => (await request(`/bookings/${encodeURIComponent(id)}/credential`)).credential
 export const regenerateCredential = async (id) => (await request(`/bookings/${encodeURIComponent(id)}/credential/regenerate`, { method: 'POST' })).credential
 export const uploadApplicationFile = async (name, dataUrl) => (await request('/uploads/application-file', { method: 'POST', body: { name, dataUrl } })).file

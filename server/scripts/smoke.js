@@ -68,7 +68,9 @@ try {
       token: organizer.token,
       body: {
         title: 'Smoke Test Build Night', category: 'hackathon', mode: 'In-person', city: 'Pune', venue: 'Test Venue, Pune',
-        date: inDays(10), time: '18:00', organizerChapter: 'GDG Pune', capacity: 2,
+        date: inDays(10), time: '18:00', endDate: inDays(11), organizerChapter: 'GDG Pune', capacity: 2,
+        applicationsOpenAt: new Date(Date.now() - 3600e3).toISOString(), applicationsCloseAt: new Date(Date.now() + 5 * 86400e3).toISOString(),
+        teamMin: 1, teamMax: 4,
         description: 'Temporary event created by the Codefolio smoke test. Safe to delete.', requirements: ['Laptop'], learn: ['Testing'], tags: ['test'],
       },
     })

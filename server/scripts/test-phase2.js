@@ -88,7 +88,7 @@ console.log('\nApplications (booking approval)')
 const mkEvent = (id, cap, owner, extra = '') =>
   db.query(
     `insert into events (id, title, type, category, mode, city, venue, date, start_time, organizer_chapter, capacity, available_seats, created_by ${extra ? ', status' : ''})
-     values ($1, 'Test Hack Night', 'Hackathon', 'hackathon', 'In-person', 'Pune', 'Venue', current_date + 3, '18:00', 'GDG Test', $2, $2, $3 ${extra ? `, '${extra}'` : ''})`,
+     values ($1, 'Test Build Night', 'Event', 'workshop', 'In-person', 'Pune', 'Venue', current_date + 3, '18:00', 'GDG Test', $2, $2, $3 ${extra ? `, '${extra}'` : ''})`,
     [id, cap, owner],
   )
 await mkEvent('ev1', 2, alice)
@@ -163,10 +163,10 @@ await test('attendance can’t be undone: attended bookings can’t be removed o
 })
 await test('removed participant: seats released, QR revoked, scan says revoked', async () => {
   const y = await user('y@x.dev', 'Yara')
-  const yb = await one(`select * from request_booking($1, 'ev2', 2, null, 1)`, [y])
+  const yb = await one(`select * from request_booking($1, 'ev2', 1, null, 1)`, [y])
   await one(`select * from review_booking($1, $2, 'approve', null)`, [dave, yb.id])
   const c = (await one(`select booking_credential($1, $2, false) as c`, [y, yb.id])).c
-  assert.equal((await one(`select available_seats from events where id = 'ev2'`)).available_seats, 8)
+  assert.equal((await one(`select available_seats from events where id = 'ev2'`)).available_seats, 9)
   await one(`select * from review_booking($1, $2, 'remove', 'No-show policy')`, [dave, yb.id])
   assert.equal((await one(`select available_seats from events where id = 'ev2'`)).available_seats, 10)
   await fails(`select check_in($1, 'ev2', $2)`, [dave, c.token], 'checkin/revoked')
@@ -185,11 +185,136 @@ await test('attendee cancels pending (no seat change) and confirmed (seat releas
   const p = await one(`select * from request_booking($1, 'ev3', 1, null, 1)`, [w])
   assert.equal((await one(`select * from cancel_booking($1, $2)`, [w, p.id])).status, 'Cancelled')
   assert.equal((await one(`select available_seats from events where id = 'ev3'`)).available_seats, 5)
-  const p2 = await one(`select * from request_booking($1, 'ev3', 2, null, 1)`, [w]) // allowed again after cancelling
+  const p2 = await one(`select * from request_booking($1, 'ev3', 1, null, 1)`, [w]) // allowed again after cancelling
   await one(`select * from review_booking($1, $2, 'approve', null)`, [dave, p2.id])
   await one(`select * from cancel_booking($1, $2)`, [w, p2.id])
   assert.equal((await one(`select available_seats from events where id = 'ev3'`)).available_seats, 5)
 })
+console.log('\nTimeline, drafts, team sizes')
+await test('drafts can’t be applied to', async () => {
+  await mkEvent('ev4', 10, alice, 'Draft')
+  await fails(`select * from request_booking($1, 'ev4', 1, '{}', 0)`, [carol], 'event/missing')
+})
+await test('applications respect the open / deadline window', async () => {
+  await mkEvent('ev5', 10, alice)
+  await db.query(`update events set applications_open_at = now() + interval '1 day', applications_close_at = now() + interval '2 days' where id = 'ev5'`)
+  const msg = await fails(`select * from request_booking($1, 'ev5', 1, '{}', 0)`, [carol], 'event/not_open')
+  assert.match(msg, /Applications open on/)
+  await db.query(`update events set applications_open_at = now() - interval '2 days', applications_close_at = now() - interval '1 hour' where id = 'ev5'`)
+  await fails(`select * from request_booking($1, 'ev5', 1, '{}', 0)`, [carol], 'event/closed')
+  await db.query(`update events set applications_close_at = now() + interval '1 hour' where id = 'ev5'`)
+  assert.equal((await one(`select * from request_booking($1, 'ev5', 1, '{}', 0)`, [carol])).status, 'Pending')
+})
+await test('constraints: team min ≤ max (1–10), window order, end date ≥ start', async () => {
+  for (const sql of [
+    `update events set team_min = 5, team_max = 2 where id = 'ev5'`,
+    `update events set team_max = 11 where id = 'ev5'`,
+    `update events set applications_open_at = now(), applications_close_at = now() - interval '1 day' where id = 'ev5'`,
+    `update events set end_date = date - 1 where id = 'ev5'`,
+  ]) {
+    await assert.rejects(db.query(sql), /violates check constraint/)
+  }
+  await db.query(`update events set team_min = 1, team_max = 4, hybrid = true, theme = 'Climate Tech', end_date = date + 1 where id = 'ev5'`)
+})
+
+console.log('\nHackathon teams')
+const erin = await user('erin@x.dev', 'Erin Coder')
+const finn = await user('finn@x.dev', 'Finn Coder')
+const gina = await user('gina@x.dev', 'Gina Coder')
+const mkHack = (id, min, max) =>
+  db.query(
+    `insert into events (id, title, type, category, mode, city, venue, date, start_time, organizer_chapter, capacity, available_seats, created_by, team_min, team_max)
+     values ($1, 'Team Hack', 'Hackathon', 'hackathon', 'Online', 'Online', 'Online', current_date + 5, '10:00', 'GDG Test', 50, 50, $2, $3, $4)`,
+    [id, alice, min, max],
+  )
+const apply = (u, ev, part, name = null, code = null, seats = 1) =>
+  db.query(`select * from request_booking($1, $2, $3, '{}', 0, $4, $5, $6)`, [u, ev, seats, part, name, code])
+let team
+await test('hackathons require a participation choice', async () => {
+  await mkHack('hk1', 2, 3)
+  await fails(`select * from request_booking($1, 'hk1', 1, '{}', 0)`, [bob], 'team/choice')
+})
+await test('solo is refused when the minimum team size is above 1', async () => {
+  const msg = await fails(`select * from request_booking($1, 'hk1', 1, '{}', 0, 'solo')`, [bob], 'team/solo_disabled')
+  assert.match(msg, /at least 2/)
+})
+await test('creating a team gives a unique 6-character code; the creator leads it; 1 seat each', async () => {
+  const b = (await apply(bob, 'hk1', 'team_create', '  Byte   Me ', null, 3)).rows[0]
+  assert.equal(b.participation, 'team')
+  assert.equal(b.seats, 1)
+  team = await one(`select * from teams where id = $1`, [b.team_id])
+  assert.equal(team.name, 'Byte Me')
+  assert.match(team.code, /^[A-HJ-NP-Z2-9]{6}$/)
+  assert.equal(team.leader_id, bob)
+  await fails(`select * from request_booking($1, 'hk1', 1, '{}', 0, 'team_create', 'byte me')`, [carol], 'team/name_taken')
+})
+await test('others join by code (any format); wrong event / unknown codes are refused', async () => {
+  const pretty = `${team.code.slice(0, 3).toLowerCase()}-${team.code.slice(3)}`
+  const c = (await apply(carol, 'hk1', 'team_join', null, pretty)).rows[0]
+  assert.equal(c.team_id, team.id)
+  await fails(`select * from request_booking($1, 'hk1', 1, '{}', 0, 'team_join', null, 'ZZZZZZ')`, [erin], 'team/not_found')
+  await mkHack('hk2', 1, 4)
+  await fails(`select * from request_booking($1, 'hk2', 1, '{}', 0, 'team_join', null, $2)`, [erin, team.code], 'team/wrong_event')
+})
+await test('a full team refuses new members (max 3)', async () => {
+  await apply(erin, 'hk1', 'team_join', null, team.code)
+  const msg = await fails(`select * from request_booking($1, 'hk1', 1, '{}', 0, 'team_join', null, $2)`, [finn, team.code], 'team/full')
+  assert.match(msg, /3 of 3/)
+})
+await test('leaving frees the slot; the leader leaving hands over; empty teams are deleted', async () => {
+  const bobBooking = await one(`select id from bookings where user_id = $1 and event_id = 'hk1'`, [bob])
+  await one(`select * from cancel_booking($1, $2)`, [bob, bobBooking.id])
+  const t = await one(`select leader_id from teams where id = $1`, [team.id])
+  assert.equal(t.leader_id, carol)
+  assert.equal((await one(`select count(*)::int n from team_members where team_id = $1`, [team.id])).n, 2)
+  await apply(finn, 'hk1', 'team_join', null, team.code) // slot free again
+  for (const u of [carol, erin, finn]) {
+    const b = await one(`select id from bookings where user_id = $1 and event_id = 'hk1' and status = 'Pending'`, [u])
+    await one(`select * from cancel_booking($1, $2)`, [u, b.id])
+  }
+  assert.equal((await one(`select count(*)::int n from teams where id = $1`, [team.id])).n, 0)
+})
+await test('solo works when min is 1; teams refused when max is 1', async () => {
+  assert.equal((await apply(gina, 'hk2', 'solo')).rows[0].participation, 'solo')
+  await mkHack('hk3', 1, 1)
+  await fails(`select * from request_booking($1, 'hk3', 1, '{}', 0, 'team_create', 'Nope')`, [erin], 'team/solo_only')
+})
+
+console.log('\nIndividual applications, application fee')
+await test('events: one seat per application, no team fields', async () => {
+  await mkEvent('ev6', 10, alice)
+  const r = await one(`select * from request_booking($1, 'ev6', 4, '{}', 0, 'team_create', 'Sneaky')`, [gina])
+  assert.equal(r.seats, 1)
+  assert.equal(r.participation, null)
+  assert.equal(r.team_id, null)
+})
+await test('fee > 0 needs UPI ID, 10-digit number and https QR on the event', async () => {
+  await mkEvent('ev7', 10, alice)
+  for (const sql of [
+    `update events set application_fee = 199 where id = 'ev7'`,
+    `update events set application_fee = 199, upi_id = 'bad id', upi_number = '9876543210', upi_qr_url = 'https://x/qr.png' where id = 'ev7'`,
+    `update events set application_fee = 199, upi_id = 'club@okaxis', upi_number = '12345', upi_qr_url = 'https://x/qr.png' where id = 'ev7'`,
+    `update events set application_fee = -1 where id = 'ev7'`,
+  ]) {
+    await assert.rejects(db.query(sql), /violates check constraint/)
+  }
+  await db.query(`update events set application_fee = 199, upi_id = 'club@okaxis', upi_number = '9876543210', upi_qr_url = 'https://x/qr.png' where id = 'ev7'`)
+})
+await test('paid events need a unique 12-digit UTR; the fee is recorded on the booking', async () => {
+  await fails(`select * from request_booking($1, 'ev7', 1, '{}', 0)`, [erin], 'payment/ref')
+  await fails(`select * from request_booking($1, 'ev7', 1, '{}', 0, null, null, null, '12345')`, [erin], 'payment/ref')
+  await fails(`select * from request_booking($1, 'ev7', 1, '{}', 0, null, null, null, '123456789012', '{"path":"someone-else/x.png"}')`, [erin], 'payment/proof')
+  const b = await one(`select * from request_booking($1, 'ev7', 1, '{}', 0, null, null, null, '1234 5678 9012', $2)`, [erin, { path: `${erin}/proof.png`, name: 'proof.png' }])
+  assert.equal(b.fee_amount, 199)
+  assert.equal(b.payment_ref, '123456789012')
+  await fails(`select * from request_booking($1, 'ev7', 1, '{}', 0, null, null, null, '123456789012')`, [finn], 'payment/duplicate')
+})
+await test('free events ignore payment fields', async () => {
+  const b = await one(`select * from request_booking($1, 'ev6', 1, '{}', 0, null, null, null, '123456789012')`, [finn])
+  assert.equal(b.fee_amount, null)
+  assert.equal(b.payment_ref, null)
+})
+
 await test('functions are not callable from the browser roles', async () => {
   for (const role of ['anon', 'authenticated']) {
     await db.exec('begin')

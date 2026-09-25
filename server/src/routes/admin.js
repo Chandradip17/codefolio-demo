@@ -4,10 +4,10 @@ import { admin } from '../lib/supabase.js'
 import { config } from '../lib/config.js'
 import { HttpError, must, mustRow, notConfigured } from '../lib/errors.js'
 import { requireAuth } from '../lib/auth.js'
-import { toBooking, toEvent } from '../lib/mappers.js'
+import { TEAM_SELECT, toBooking, toEvent } from '../lib/mappers.js'
 import { checkInSchema, reviewSchema, uploadSchema } from '../lib/validate.js'
 import { EVENT_DEFAULT, HACKATHON_DEFAULT, cleanFormSchema } from '../lib/forms.js'
-import { broadcast, formFor } from './bookings.js'
+import { announceTeam, bookingWithTeam, broadcast, formFor } from './bookings.js'
 
 const router = Router()
 
@@ -25,7 +25,7 @@ router.get('/bookings', async (req, res) => {
   const rows = must(
     await admin
       .from('bookings')
-      .select('*, events!inner(created_by)')
+      .select(`*, events!inner(created_by), ${TEAM_SELECT}`)
       .eq('events.created_by', req.user.id)
       .order('booked_at', { ascending: false }),
   )
@@ -72,10 +72,12 @@ router.post('/bookings/:id/:action', async (req, res) => {
   const { note } = reviewSchema.parse(req.body || {})
   const row = mustRow(await admin.rpc('review_booking', { p_host: req.user.id, p_booking: req.params.id, p_decision: decision, p_note: note }))
   const ev = row.event_id ? must(await admin.from('events').select('*').eq('id', row.event_id).maybeSingle()) : null
-  const booking = toBooking(row)
+  const booking = toBooking(await bookingWithTeam(row.id))
   const event = ev ? toEvent(ev) : null
   res.json({ booking, event })
   broadcast(booking, event)
+  // Rejected / removed members leave their team: update the rest of the roster.
+  if (decision !== 'approve') announceTeam(row.team_id, ev?.created_by).catch(() => {})
 })
 
 // GET /api/admin/bookings/:id/answers: the applicant's form answers (+ private file links)
@@ -95,7 +97,25 @@ router.get('/bookings/:id/answers', async (req, res) => {
   const profile = must(
     await admin.from('profiles').select('username, avatar_url, college, company, skills, github_url, linkedin_url, portfolio_url, city').eq('id', b.user_id).maybeSingle(),
   )
-  res.set('Cache-Control', 'no-store').json({ questions: form.questions, answers, profile })
+  const withTeam = await bookingWithTeam(b.id)
+  const { team } = toBooking(withTeam)
+  res.set('Cache-Control', 'no-store').json({
+    questions: form.questions,
+    answers,
+    profile,
+    participation: b.participation,
+    team,
+    teamLimits: ev.category === 'hackathon' ? { min: ev.team_min ?? 1, max: ev.team_max ?? 4 } : null,
+    payment: b.fee_amount
+      ? {
+          amount: b.fee_amount,
+          ref: b.payment_ref,
+          proof: b.payment_proof?.path
+            ? { name: b.payment_proof.name, url: (await admin.storage.from('application-files').createSignedUrl(b.payment_proof.path, 600)).data?.signedUrl || null }
+            : null,
+        }
+      : null,
+  })
 })
 
 // ---------- check-in ----------
@@ -104,7 +124,7 @@ router.post('/checkin', async (req, res) => {
   const { eventId, code } = checkInSchema.parse(req.body)
   const result = must(await admin.rpc('check_in', { p_host: req.user.id, p_event: eventId, p_code: code }))
   res.json({ result })
-  const row = must(await admin.from('bookings').select('*').eq('id', result.bookingDbId).maybeSingle())
+  const row = await bookingWithTeam(result.bookingDbId).catch(() => null)
   const ev = must(await admin.from('events').select('*').eq('id', eventId).maybeSingle())
   if (row && ev) broadcast(toBooking(row), toEvent(ev))
 })

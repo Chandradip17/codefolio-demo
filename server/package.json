@@ -13,7 +13,9 @@
     "test:phase1": "node scripts/test-phase1.js",
     "dev:watch": "node --watch-path=./src --env-file-if-exists=.env src/index.js",
     "test:phase2": "node scripts/test-phase2.js",
-    "smoke:phase2": "node --env-file-if-exists=.env scripts/smoke-phase2.js"
+    "smoke:phase2": "node --env-file-if-exists=.env scripts/smoke-phase2.js",
+    "smoke:teams": "node --env-file-if-exists=.env scripts/smoke-teams.js",
+    "smoke:fees": "node --env-file-if-exists=.env scripts/smoke-fees.js"
   },
   "engines": {
     "node": ">=20.6"

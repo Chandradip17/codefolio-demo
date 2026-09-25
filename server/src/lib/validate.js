@@ -6,6 +6,19 @@ const today = () => {
 }
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.')
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h).')
+const dateTime = z.iso.datetime({ offset: true, message: 'Pick a date and time.' })
+// '' / null → null; otherwise a whole number 1–10 (team sizes).
+const teamSize = z.preprocess(
+  (v) => (v === '' || v == null ? null : Number(v)),
+  z.number({ message: 'Enter a number.' }).int('Use a whole number.').min(1, 'At least 1.').max(10, 'At most 10.').nullable(),
+)
+// Codefolio times are IST.
+const startOf = (date, t) => new Date(`${date}T${t}:00+05:30`)
+// Indian mobile number: accept "+91 98765 43210", "098765-43210" etc.
+const upiNumber = z.preprocess(
+  (v) => (v == null || v === '' ? null : String(v).replace(/[\s-]/g, '').replace(/^(\+?91|0)(?=\d{10}$)/, '')),
+  z.string().regex(/^[6-9]\d{9}$/, 'Enter a 10-digit mobile number linked to UPI.').nullable(),
+)
 const lines = z
   .array(z.string().trim().min(1).max(200))
   .max(20)
@@ -53,12 +66,26 @@ export const eventSchema = z
   .object({
     title: z.string().trim().min(5, 'Give the event a descriptive title (5+ characters).').max(140),
     category: z.enum(['hackathon', 'workshop', 'gdg']),
-    mode: z.enum(['Online', 'In-person']),
+    mode: z.enum(['Online', 'In-person', 'Hybrid']),
+    status: z.enum(['Published', 'Draft']).default('Published'),
     city: z.string().trim().min(2, 'Choose a city.').max(60),
     venue: z.string().trim().max(200).default(''),
     date: isoDate,
     time,
     endTime: time.nullish(),
+    endDate: isoDate.nullish(),
+    applicationsOpenAt: dateTime.nullish(),
+    applicationsCloseAt: dateTime.nullish(),
+    theme: z.string().trim().max(120, 'Keep the theme under 120 characters.').nullish(),
+    teamMin: teamSize.optional(),
+    teamMax: teamSize.optional(),
+    applicationFee: z.preprocess(
+      (v) => (v === '' || v == null ? 0 : Number(v)),
+      z.number({ message: 'Enter an amount in rupees.' }).int('Use whole rupees.').min(0, 'The fee can’t be negative.').max(100000, 'The fee can be at most ₹1,00,000.'),
+    ),
+    upiId: z.string().trim().max(320).nullish(),
+    upiNumber: upiNumber.optional(),
+    upiQrUrl: z.string().trim().max(2000).nullish(),
     organizerChapter: z.string().trim().min(2, 'Which chapter is organizing?').max(80),
     capacity: z.coerce.number().int().min(1, 'Capacity must be at least 1.').max(100000),
     description: z.string().trim().min(30, 'Describe the event in at least 30 characters.').max(8000),
@@ -74,20 +101,49 @@ export const eventSchema = z
     tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   })
   .superRefine((v, ctx) => {
-    if (v.mode === 'In-person' && v.venue.length < 3) ctx.addIssue({ code: 'custom', path: ['venue'], message: 'Add a venue for in-person events.' })
-    if (v.registrationDeadline && v.registrationDeadline > v.date) {
-      ctx.addIssue({ code: 'custom', path: ['registrationDeadline'], message: 'Deadline must be on or before the event date.' })
+    const issue = (path, message) => ctx.addIssue({ code: 'custom', path: [path], message })
+    if (v.mode !== 'Online' && v.venue.length < 3) issue('venue', 'Add a venue for in-person and hybrid events.')
+    if (v.registrationDeadline && v.registrationDeadline > v.date) issue('registrationDeadline', 'Deadline must be on or before the event date.')
+    if (v.endDate && v.endDate < v.date) issue('endDate', 'The end date can’t be before the start date.')
+    if (v.endTime && (!v.endDate || v.endDate === v.date) && v.endTime <= v.time) issue('endTime', 'The end must be after the start.')
+    const open = v.applicationsOpenAt ? new Date(v.applicationsOpenAt) : null
+    const close = v.applicationsCloseAt ? new Date(v.applicationsCloseAt) : null
+    if (open && close && open >= close) issue('applicationsCloseAt', 'The deadline must be after applications open.')
+    if (close && close > startOf(v.date, v.time)) issue('applicationsCloseAt', 'Applications must close before the event starts.')
+    if (v.category === 'hackathon') {
+      if (!open) issue('applicationsOpenAt', 'When do applications open?')
+      if (!close) issue('applicationsCloseAt', 'When is the application deadline?')
+      if (!v.endDate) issue('endDate', 'When does hacking end?')
+      if (v.teamMin == null) issue('teamMin', 'Set the minimum team size.')
+      if (v.teamMax == null) issue('teamMax', 'Set the maximum team size.')
+    }
+    if (v.teamMin != null && v.teamMax != null && v.teamMin > v.teamMax) issue('teamMax', 'Max team size must be at least the minimum.')
+    // Payment details are needed only when there is a fee.
+    if (v.applicationFee > 0) {
+      if (!/^[A-Za-z0-9._-]{2,255}@[A-Za-z]{2,64}$/.test(v.upiId || '')) issue('upiId', 'Enter a valid UPI ID, e.g. yourclub@okaxis.')
+      if (!v.upiNumber) issue('upiNumber', 'Enter the mobile number linked to UPI.')
+      if (!/^https:\/\//.test(v.upiQrUrl || '')) issue('upiQrUrl', 'Upload your UPI QR code image.')
     }
   })
 
 export const newEventSchema = eventSchema.superRefine((v, ctx) => {
   if (v.date < today()) ctx.addIssue({ code: 'custom', path: ['date'], message: 'The date must be today or later.' })
+  if (v.applicationsCloseAt && new Date(v.applicationsCloseAt) <= new Date()) {
+    ctx.addIssue({ code: 'custom', path: ['applicationsCloseAt'], message: 'The application deadline must be in the future.' })
+  }
 })
 
 export const bookingSchema = z.object({
   eventId: z.string().trim().min(1).max(64),
   seats: z.coerce.number().int().min(1).max(4).default(1),
   answers: z.record(z.string(), z.any()).optional().default({}),
+  // Hackathons: how the applicant takes part (the SQL function enforces the rules).
+  participation: z.enum(['solo', 'team_create', 'team_join']).nullish(),
+  // Paid events: UPI transaction ID (UTR) + optional screenshot (uploaded first).
+  paymentRef: z.string().trim().max(40).nullish(),
+  paymentProof: z.object({ path: z.string().max(300), name: z.string().max(200), size: z.number().optional(), type: z.string().max(100).optional() }).nullish(),
+  teamName: z.string().trim().max(60, 'Team name must be 2–60 characters.').nullish(),
+  teamCode: z.string().trim().max(20).nullish(),
 })
 
 export const reviewSchema = z.object({ note: z.string().trim().max(500).optional().default('') })

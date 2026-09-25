@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Modal from './Modal'
 import Icon from './Icon'
-import ApplicationForm from './ApplicationForm'
+import ApplicationForm, { teamLimits } from './ApplicationForm'
 import { seatInfo } from './EventCard'
 import { Badge, Button, CategoryBadge, EmptyState, SourceBadge, StatusBadge } from './ui'
 import { useAuth } from '../context/AuthContext'
@@ -10,8 +10,9 @@ import { useData } from '../context/DataContext'
 import { useToast } from '../context/ToastContext'
 import { useCloseEvent } from '../hooks/useOpenEvent'
 import { rememberNext } from '../services/supabase'
-import { compactNumber, cx, formatDate, formatTime } from '../utils/format'
+import { compactNumber, cx, formatDate, formatDateTime, formatTime } from '../utils/format'
 import { fallbackImage } from '../data/images'
+import { CopyCode } from './BookingCard'
 
 // Mounted once in the layout; opens whenever `?event=<id>` is in the URL.
 export function EventModalHost() {
@@ -74,7 +75,8 @@ function EventDetails({ event, onBooked }) {
   const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const [seats, setSeats] = useState(1)
+  // Everyone applies individually: one application = one seat.
+  const seats = 1
   const [step, setStep] = useState('details')
   const [imgFailed, setImgFailed] = useState(false)
 
@@ -85,10 +87,13 @@ function EventDetails({ event, onBooked }) {
   const isLocal = event.source === 'codefolio'
   const seatsInfo = seatInfo(event)
   const soldOut = isLocal && event.availableSeats <= 0
+  // Application window set by the host (null = always open until the event).
+  const now = Date.now()
+  const notOpenYet = isLocal && event.applicationsOpenAt && now < new Date(event.applicationsOpenAt).getTime()
+  const appsClosed = isLocal && event.applicationsCloseAt && now > new Date(event.applicationsCloseAt).getTime()
   const cancelled = event.status === 'Cancelled'
   const existing = isLocal && myActiveBooking(event.id)
   const last = isLocal && !existing && myLastBooking(event.id)
-  const maxSeats = Math.max(1, Math.min(4, event.availableSeats || 1))
 
   if (step === 'apply') {
     return (
@@ -163,6 +168,23 @@ function EventDetails({ event, onBooked }) {
         </Button>
       </>
     )
+  } else if (notOpenYet) {
+    cta = (
+      <>
+        <Button size="lg" variant="secondary" disabled className="btn--block" icon="clock">
+          Applications open soon
+        </Button>
+        <p className="cta-note">
+          <Icon name="info" size={14} /> Applications open on {formatDateTime(event.applicationsOpenAt)} IST.
+        </p>
+      </>
+    )
+  } else if (appsClosed) {
+    cta = (
+      <Button size="lg" variant="secondary" disabled className="btn--block" icon="lock">
+        Applications closed
+      </Button>
+    )
   } else if (soldOut) {
     cta = (
       <Button size="lg" variant="secondary" disabled className="btn--block">
@@ -172,21 +194,8 @@ function EventDetails({ event, onBooked }) {
   } else {
     cta = (
       <>
-        <div className="seat-picker">
-          <span id="seat-picker-label">Seats</span>
-          <div className="stepper" role="group" aria-labelledby="seat-picker-label">
-            <button type="button" className="icon-btn" onClick={() => setSeats((s) => Math.max(1, s - 1))} disabled={seats <= 1} aria-label="Fewer seats">
-              −
-            </button>
-            <output aria-live="polite">{seats}</output>
-            <button type="button" className="icon-btn" onClick={() => setSeats((s) => Math.min(maxSeats, s + 1))} disabled={seats >= maxSeats} aria-label="More seats">
-              +
-            </button>
-          </div>
-        </div>
         <Button size="lg" className="btn--block" icon="ticket" onClick={() => setStep('apply')}>
           {last?.status === 'Rejected' || last?.status === 'Removed' ? 'Apply again' : 'Book My Seat'}
-          {seats > 1 ? ` (${seats})` : ''}
         </Button>
         <p className="cta-note">
           <Icon name="info" size={14} />
@@ -194,7 +203,9 @@ function EventDetails({ event, onBooked }) {
             ? ` Your last request (${last.bookingId}) wasn't approved${last.reviewNote ? `: “${last.reviewNote}”` : '.'}`
             : last?.status === 'Removed'
               ? ` You were removed from this event earlier (${last.bookingId}).`
-              : ' A short application goes to the organizer; your seat is confirmed once they approve it.'}
+              : event.category === 'hackathon'
+                ? ` Apply solo or as a team (${teamLimits(event).min === teamLimits(event).max ? teamLimits(event).min : `${teamLimits(event).min}–${teamLimits(event).max}`} members): create a team to get a code, or join one with a code.`
+                : ' A short application goes to the organizer; your seat is confirmed once they approve it.'}
         </p>
       </>
     )
@@ -212,6 +223,7 @@ function EventDetails({ event, onBooked }) {
             <CategoryBadge category={event.category} />
             <SourceBadge event={event} />
             {cancelled && <StatusBadge status="Cancelled" />}
+            {event.status === 'Draft' && <StatusBadge status="Draft" />}
           </div>
           <p className="event-detail__title" aria-hidden="true">
             {event.title}
@@ -335,9 +347,8 @@ function EventDetails({ event, onBooked }) {
               <Row icon="globe" label="City">
                 {event.city || '—'}
               </Row>
-              <Row icon={event.mode === 'Online' ? 'wifi' : 'building'} label="Mode">
-                {event.mode}
-                {event.hybrid ? ' (hybrid)' : ''}
+              <Row icon={event.hybrid ? 'globe' : event.mode === 'Online' ? 'wifi' : 'building'} label="Mode">
+                {event.hybrid ? 'Hybrid (in-person + online)' : event.mode}
               </Row>
               {event.capacity != null && (
                 <Row icon="users" label="Capacity">
@@ -349,7 +360,26 @@ function EventDetails({ event, onBooked }) {
                   {event.teamSize} members
                 </Row>
               )}
-              {event.registrationDeadline && (
+              {isLocal && (
+                <Row icon="ticket" label="Application fee">
+                  {event.applicationFee > 0 ? `₹${event.applicationFee.toLocaleString('en-IN')} (UPI)` : 'Free'}
+                </Row>
+              )}
+              {event.theme && (
+                <Row icon="sparkles" label="Theme / track">
+                  {event.theme}
+                </Row>
+              )}
+              {event.applicationsOpenAt && (
+                <Row icon="calendar" label="Applications open">
+                  {formatDateTime(event.applicationsOpenAt)} IST
+                </Row>
+              )}
+              {event.applicationsCloseAt ? (
+                <Row icon="alert" label="Application deadline">
+                  {formatDateTime(event.applicationsCloseAt)} IST
+                </Row>
+              ) : event.registrationDeadline && (
                 <Row icon="alert" label="Registration closes">
                   {formatDate(event.registrationDeadline)}
                 </Row>
@@ -423,15 +453,44 @@ function BookingConfirmation({ booking, onClose }) {
               {e.city && !e.venue.includes(e.city) ? `, ${e.city}` : ''}
             </dd>
           </div>
-          <div>
-            <dt>Seats requested</dt>
-            <dd>{booking.seats}</dd>
-          </div>
+          {booking.feeAmount ? (
+            <div className="pass__wide">
+              <dt>Application fee</dt>
+              <dd>
+                ₹{booking.feeAmount.toLocaleString('en-IN')} · UTR <code>{booking.paymentRef}</code> · the organizer verifies it before approving
+              </dd>
+            </div>
+          ) : null}
+          {booking.team ? (
+            <div>
+              <dt>Team</dt>
+              <dd>{booking.team.name}</dd>
+            </div>
+          ) : booking.participation === 'solo' ? (
+            <div>
+              <dt>Participation</dt>
+              <dd>Solo</dd>
+            </div>
+          ) : (
+            <div>
+              <dt>Seats requested</dt>
+              <dd>{booking.seats}</dd>
+            </div>
+          )}
           <div>
             <dt>Attendee</dt>
             <dd>{booking.attendeeName}</dd>
           </div>
         </dl>
+        {booking.team && (
+          <div className="pass__team">
+            <p className="eyebrow">Team code · share it with your teammates</p>
+            <CopyCode value={booking.team.code} label="team code" />
+            <p className="small muted">
+              {booking.team.size} {booking.team.size === 1 ? 'member' : 'members'} so far. Teammates choose “Join team” and enter this code when they apply.
+            </p>
+          </div>
+        )}
         <div className="pass__barcode" aria-hidden="true">
           {booking.bookingId.split('').map((c, i) => (
             <span key={i} style={{ '--w': (c.charCodeAt(0) % 3) + 1 }} />

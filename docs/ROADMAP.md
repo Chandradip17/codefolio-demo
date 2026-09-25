@@ -65,7 +65,45 @@ Migration: `server/supabase/migrations/20260925150000_hosting_applications_check
   - Each failure gets a precise message: invalid, not found, wrong event, already checked in (with the time), revoked, not approved, event closed.
 - Check-in is atomic, and only one check-in per registration is possible.
 
-**Tests:** `npm run test:phase2` (19 local SQL tests) and `npm run smoke:phase2` (15 live end-to-end steps; it removes everything it creates).
+**Event timeline & drafts** (Admin → Add/Edit Event; migration `20260925170000_event_timeline_teams_drafts.sql`)
+- **Hackathons require:**
+  - application opening date/time and deadline (IST)
+  - "Hacking starts" and "Hacking ends / demos" dates
+  - min and max team size (1–10)
+- **Optional:** a theme/track for hackathons. Other event types can set the same window and an end date, but don't have to.
+- **Participation format:** In-person, Online or Hybrid.
+- **Publish status:** Published or Draft. Drafts are visible only to their host (the API hides them from everyone else) and can't be applied to. An event with applicants can't go back to draft.
+- **Order is enforced** in the form, the API and the database: applications open → deadline → hacking starts → hacking ends. Applying outside the window is refused with the exact open date.
+- After creating a hackathon, the host goes straight to its application form builder.
+
+**Hackathon teams** (migration `20260925190000_hackathon_teams.sql`)
+- When applying to a hackathon, members choose **Solo**, **Create team** or **Join team**:
+  - Solo is disabled when the minimum team size is above 1.
+  - Teams are disabled when the maximum is 1.
+  - Hackathons without team settings allow teams of 1–4.
+- **Create team:** the creator names the team (unique per hackathon) and gets a **6-character code**. They become the team leader.
+- **Join team:** others enter the code, with a "Check code" preview. Joining is refused if the code is unknown, for a different hackathon, or the team is full. Joins are locked so two people can't take the last slot at once.
+- Every member sends their own application (1 seat each; no seat picker for hackathons).
+- When a member withdraws or is rejected or removed, they leave the team. An empty team is deleted, and if the leader leaves, leadership passes to the next member.
+- **Where teams show up:**
+  - the confirmation pass shows the code, with a copy button
+  - dashboard cards show the team name, member count, code and whether you lead it
+  - the host sees the team in Admin → Bookings, the answers view and the CSV export, with a warning when a team is below the minimum size
+- Rosters update live (`team.updated`).
+- **Tests:** `test:phase2` covers teams in SQL, and `npm run smoke:teams` runs 7 live end-to-end steps.
+
+**Individual applications & application fee** (migration `20260926100000_individual_applications_fees.sql`)
+- **One person, one seat:** every application is for exactly 1 seat, and the seat picker is gone. Teams exist only for hackathons; for other events the server ignores any team fields.
+- **Setting a fee:** Admin → Add/Edit Event has an **Application Fee** section; 0 = free.
+- **Paid events:** the host must add a **UPI ID**, a **UPI number** (10-digit mobile; +91/0 prefixes are normalised) and a **UPI QR image** (uploaded as PNG). The database enforces this too.
+- **Privacy:** the public event list shows only the fee amount. UPI details go to the host and to signed-in applicants through the application form.
+- **Applying to a paid event:** the applicant pays by QR, ID or number, then enters the **12-digit UPI transaction ID (UTR)**. A payment screenshot is optional and stored privately. A UTR can't be reused for the same event, and the fee amount is recorded on the booking.
+- **Where it shows:**
+  - host: fee and UTR in the bookings list, answers view (with a screenshot link) and CSV, to verify before approving
+  - attendee: fee and UTR on the confirmation pass and ticket
+- **Tests:** `npm run smoke:fees` (7 live steps).
+
+**Tests:** `npm run test:phase2` (33 local SQL tests) and `npm run smoke:phase2` (15 live end-to-end steps; it removes everything it creates).
 
 ## Known gaps / next decisions
 
