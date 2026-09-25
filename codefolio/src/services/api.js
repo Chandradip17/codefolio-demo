@@ -76,7 +76,24 @@ export async function signup(input) {
   if (error) throw authError(error)
   return me()
 }
+// Which sign-in providers are switched on in Supabase (public endpoint).
+async function authProviders() {
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+  try {
+    const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
+    return res.ok ? (await res.json()).external || null : null
+  } catch {
+    return null // unknown: let the redirect try anyway
+  }
+}
+
 export async function signInWithGoogle() {
+  // A disabled provider would otherwise send the visitor to a raw JSON error page.
+  const providers = await authProviders()
+  if (providers && !providers.google) {
+    throw new ApiError('Google sign-in isn’t switched on for Codefolio yet. Use an email code or password for now.', 400, 'auth/google_disabled')
+  }
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: `${window.location.origin}/auth/callback` },
