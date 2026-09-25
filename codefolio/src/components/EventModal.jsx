@@ -1,0 +1,438 @@
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import Modal from './Modal'
+import Icon from './Icon'
+import { seatInfo } from './EventCard'
+import { Badge, Button, CategoryBadge, EmptyState, SourceBadge, StatusBadge } from './ui'
+import { useAuth } from '../context/AuthContext'
+import { useData } from '../context/DataContext'
+import { useToast } from '../context/ToastContext'
+import { useCloseEvent } from '../hooks/useOpenEvent'
+import { compactNumber, cx, formatDate, formatTime } from '../utils/format'
+import { fallbackImage } from '../data/images'
+
+// Mounted once in the layout; opens whenever `?event=<id>` is in the URL.
+export function EventModalHost() {
+  const [params] = useSearchParams()
+  const id = params.get('event')
+  const close = useCloseEvent()
+  const { getEvent, localStatus, gdgStatus, dfStatus } = useData()
+  const event = id ? getEvent(id) : null
+  const stillLoading = localStatus.loading || gdgStatus.loading || dfStatus.loading
+  const [confirmed, setConfirmed] = useState(null)
+
+  useEffect(() => setConfirmed(null), [id])
+
+  if (!id) return null
+  if (!event) {
+    return (
+      <Modal open onClose={close} title="Event" size="sm">
+        {stillLoading ? (
+          <div className="modal-loading">
+            <span className="spinner spinner--lg" aria-hidden="true" /> Loading event…
+          </div>
+        ) : (
+          <EmptyState icon="calendar" title="Event not found" message="It may have been removed or the link is out of date." />
+        )}
+      </Modal>
+    )
+  }
+  return (
+    <Modal open onClose={close} title={confirmed ? 'Booking confirmed' : event.title} size="lg" hideTitle className="event-modal">
+      {confirmed ? <BookingConfirmation booking={confirmed} onClose={close} /> : <EventDetails event={event} onBooked={setConfirmed} />}
+    </Modal>
+  )
+}
+
+function Row({ icon, label, children }) {
+  return (
+    <div className="detail-row">
+      <span className="detail-row__icon" aria-hidden="true">
+        <Icon name={icon} size={17} />
+      </span>
+      <div>
+        <dt>{label}</dt>
+        <dd>{children}</dd>
+      </div>
+    </div>
+  )
+}
+
+function EventDetails({ event, onBooked }) {
+  const { user } = useAuth()
+  const { bookEvent, myActiveBooking, ensureDetail } = useData()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [seats, setSeats] = useState(1)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [imgFailed, setImgFailed] = useState(false)
+
+  useEffect(() => {
+    ensureDetail(event)
+  }, [event, ensureDetail])
+
+  const isLocal = event.source === 'codefolio'
+  const seatsInfo = seatInfo(event)
+  const soldOut = isLocal && event.availableSeats <= 0
+  const cancelled = event.status === 'Cancelled'
+  const existing = isLocal && myActiveBooking(event.id)
+  const maxSeats = Math.max(1, Math.min(4, event.availableSeats || 1))
+
+  async function handleBook() {
+    setBusy(true)
+    setError('')
+    try {
+      const booking = await bookEvent(event.id, seats)
+      toast({ title: 'Seat booked', message: `${booking.bookingId} · ${event.title}` })
+      onBooked(booking)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const loginToBook = () => navigate('/login', { state: { from: `${location.pathname}${location.search}` } })
+
+  let cta
+  if (!isLocal) {
+    cta = (
+      <>
+        <Button href={event.externalUrl} size="lg" iconRight="external" className="btn--block">
+          {event.source === 'gdg' ? 'Register on GDG Community' : 'Apply on Devfolio'}
+        </Button>
+        <p className="cta-note">
+          <Icon name="info" size={14} /> Live listing from {event.source === 'gdg' ? 'gdg.community.dev' : 'devfolio.co'}. Registration
+          happens on their site.
+        </p>
+      </>
+    )
+  } else if (cancelled) {
+    cta = (
+      <Button size="lg" variant="secondary" disabled className="btn--block" icon="ban">
+        Event cancelled
+      </Button>
+    )
+  } else if (!user) {
+    cta = (
+      <Button size="lg" className="btn--block" icon="lock" onClick={loginToBook}>
+        Login to Book
+      </Button>
+    )
+  } else if (user.role === 'organizer') {
+    cta = (
+      <>
+        {event.createdBy === user.id && (
+          <Button size="lg" variant="secondary" className="btn--block" icon="edit" to={`/admin/events/${event.id}/edit`}>
+            Manage this event
+          </Button>
+        )}
+        <p className="cta-note">
+          <Icon name="info" size={14} /> Organizer accounts manage events and can't book seats. Use an attendee account to book.
+        </p>
+      </>
+    )
+  } else if (existing) {
+    cta = (
+      <>
+        <div className="booked-pill">
+          <Icon name="checkCircle" size={18} /> You're booked · <code>{existing.bookingId}</code>
+        </div>
+        <Button size="lg" variant="secondary" className="btn--block" to="/dashboard">
+          View My Bookings
+        </Button>
+      </>
+    )
+  } else if (soldOut) {
+    cta = (
+      <Button size="lg" variant="secondary" disabled className="btn--block">
+        Sold Out
+      </Button>
+    )
+  } else {
+    cta = (
+      <>
+        <div className="seat-picker">
+          <span id="seat-picker-label">Seats</span>
+          <div className="stepper" role="group" aria-labelledby="seat-picker-label">
+            <button type="button" className="icon-btn" onClick={() => setSeats((s) => Math.max(1, s - 1))} disabled={seats <= 1} aria-label="Fewer seats">
+              −
+            </button>
+            <output aria-live="polite">{seats}</output>
+            <button type="button" className="icon-btn" onClick={() => setSeats((s) => Math.min(maxSeats, s + 1))} disabled={seats >= maxSeats} aria-label="More seats">
+              +
+            </button>
+          </div>
+        </div>
+        <Button size="lg" className="btn--block" icon="ticket" onClick={handleBook} loading={busy}>
+          Book My Seat{seats > 1 ? `s (${seats})` : ''}
+        </Button>
+      </>
+    )
+  }
+
+  const learn = event.learn?.length ? event.learn : null
+  const reqs = event.requirements?.length ? event.requirements : null
+
+  return (
+    <div className="event-detail">
+      <div className="event-detail__hero">
+        <img src={imgFailed ? fallbackImage(event.category, event.id) : event.image} alt="" onError={() => setImgFailed(true)} />
+        <div className="event-detail__hero-overlay">
+          <div className="badge-row">
+            <CategoryBadge category={event.category} />
+            <SourceBadge event={event} />
+            {cancelled && <StatusBadge status="Cancelled" />}
+          </div>
+          <p className="event-detail__title" aria-hidden="true">
+            {event.title}
+          </p>
+          <p className="event-detail__org">
+            by <strong>{event.organizerChapter}</strong>
+          </p>
+        </div>
+      </div>
+
+      <div className="event-detail__grid">
+        <div className="event-detail__main">
+          {event.tagline && <p className="lead">{event.tagline}</p>}
+          <section>
+            <h3>About this {event.type === 'Hackathon' ? 'hackathon' : 'event'}</h3>
+            {event.description ? (
+              <div className="prose">
+                {event.description
+                  .split(/\n{2,}/)
+                  .slice(0, 8)
+                  .map((para, i) => (
+                    <p key={i}>{para.length > 900 ? `${para.slice(0, 900)}…` : para}</p>
+                  ))}
+              </div>
+            ) : event.source === 'gdg' && !event.enriched ? (
+              <div className="prose">
+                <div className="skeleton skeleton--line" />
+                <div className="skeleton skeleton--line" style={{ width: '85%' }} />
+                <div className="skeleton skeleton--line" style={{ width: '60%' }} />
+              </div>
+            ) : (
+              <p className="muted">The organizers haven't added a description yet.</p>
+            )}
+            {event.isSample && (
+              <p className="sample-note">
+                <Icon name="info" size={14} /> Sample event for demo purposes. Not a verified real-world event.
+              </p>
+            )}
+          </section>
+
+          {learn && (
+            <section>
+              <h3>What you'll learn</h3>
+              <ul className="check-list">
+                {learn.map((l) => (
+                  <li key={l}>
+                    <Icon name="check" size={16} /> {l}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {reqs && (
+            <section>
+              <h3>Requirements</h3>
+              <ul className="dot-list">
+                {reqs.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {event.prizes?.length > 0 && (
+            <section>
+              <h3>Prizes</h3>
+              <ul className="check-list">
+                {event.prizes.map((p) => (
+                  <li key={p}>
+                    <Icon name="trophy" size={16} /> {p}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {event.tags?.length > 0 && (
+            <div className="tag-row">
+              {event.tags.slice(0, 8).map((t) => (
+                <span key={t} className="tag">
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <section className="organizer-box">
+            <div className="avatar avatar--lg" aria-hidden="true">
+              {event.logo ? <img src={event.logo} alt="" /> : event.organizerChapter.replace(/^GDG( on Campus| Cloud)?\s*/i, '').slice(0, 1)}
+            </div>
+            <div>
+              <p className="eyebrow">Organized by</p>
+              <p className="organizer-box__name">{event.organizerChapter}</p>
+              {event.organizer?.email && <p className="muted small">{event.organizer.email}</p>}
+              {event.chapterUrl && (
+                <a className="link" href={event.chapterUrl} target="_blank" rel="noopener noreferrer">
+                  Chapter page <Icon name="external" size={13} />
+                </a>
+              )}
+              {event.site && (
+                <a className="link" href={event.site} target="_blank" rel="noopener noreferrer">
+                  Official website <Icon name="external" size={13} />
+                </a>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <aside className="event-detail__side" aria-label="Event summary and booking">
+          <div className="side-ticket">
+            <dl className="detail-list">
+              <Row icon="calendar" label="Date">
+                {formatDate(event.date, { weekday: true })}
+                {event.endDate && event.endDate !== event.date && ` → ${formatDate(event.endDate, { year: false })}`}
+              </Row>
+              <Row icon="clock" label="Time">
+                {formatTime(event.time)}
+                {event.endTime && ` – ${formatTime(event.endTime)}`} IST
+              </Row>
+              <Row icon="pin" label="Venue">
+                {event.venue || 'TBA'}
+              </Row>
+              <Row icon="globe" label="City">
+                {event.city || '—'}
+              </Row>
+              <Row icon={event.mode === 'Online' ? 'wifi' : 'building'} label="Mode">
+                {event.mode}
+                {event.hybrid ? ' (hybrid)' : ''}
+              </Row>
+              {event.capacity != null && (
+                <Row icon="users" label="Capacity">
+                  {event.capacity} seats
+                </Row>
+              )}
+              {event.teamSize && (
+                <Row icon="users" label="Team size">
+                  {event.teamSize} members
+                </Row>
+              )}
+              {event.registrationDeadline && (
+                <Row icon="alert" label="Registration closes">
+                  {formatDate(event.registrationDeadline)}
+                </Row>
+              )}
+            </dl>
+            <div className="ticket__perf ticket__perf--side" aria-hidden="true" />
+            <div className="side-ticket__seats">
+              <span className={cx('seat-label', `seat-label--${seatsInfo.tone}`)}>
+                {seatsInfo.tone === 'live' ? <span className="live-dot" aria-hidden="true" /> : <Icon name="ticket" size={14} />}
+                {isLocal && !cancelled ? (soldOut ? 'Sold Out' : `${event.availableSeats} seats remaining`) : seatsInfo.label}
+              </span>
+              {seatsInfo.pct != null && (
+                <span className="meter" aria-hidden="true">
+                  <span className={cx('meter__fill', `meter__fill--${seatsInfo.tone}`)} style={{ width: `${seatsInfo.pct}%` }} />
+                </span>
+              )}
+              {event.source === 'devfolio' && event.registered > 0 && (
+                <p className="muted small">{compactNumber(event.registered)} builders have registered so far</p>
+              )}
+            </div>
+            {error && (
+              <p className="form-error" role="alert">
+                <Icon name="alert" size={15} /> {error}
+              </p>
+            )}
+            <div className="side-ticket__cta">{cta}</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function BookingConfirmation({ booking, onClose }) {
+  const navigate = useNavigate()
+  const e = booking.event
+  return (
+    <div className="confirmation">
+      <div className="confetti" aria-hidden="true">
+        {Array.from({ length: 18 }, (_, i) => (
+          <i key={i} style={{ '--i': i }} />
+        ))}
+      </div>
+      <div className="confirmation__check" aria-hidden="true">
+        <Icon name="check" size={34} strokeWidth={3} />
+      </div>
+      <h2 className="confirmation__title">Booking Confirmed! 🎉</h2>
+      <p className="muted">A confirmation has been added to your dashboard. See you there!</p>
+
+      <div className="pass">
+        <div className="pass__top">
+          <div>
+            <p className="eyebrow">Booking ID</p>
+            <p className="pass__id">{booking.bookingId}</p>
+          </div>
+          <Badge tone="success" icon="check">
+            {booking.status}
+          </Badge>
+        </div>
+        <div className="ticket__perf" aria-hidden="true" />
+        <dl className="pass__grid">
+          <div className="pass__wide">
+            <dt>Event</dt>
+            <dd>{e.title}</dd>
+          </div>
+          <div>
+            <dt>Date</dt>
+            <dd>{formatDate(e.date, { weekday: true })}</dd>
+          </div>
+          <div>
+            <dt>Time</dt>
+            <dd>{formatTime(e.time)}</dd>
+          </div>
+          <div className="pass__wide">
+            <dt>Venue</dt>
+            <dd>
+              {e.venue}
+              {e.city && !e.venue.includes(e.city) ? `, ${e.city}` : ''}
+            </dd>
+          </div>
+          <div>
+            <dt>Seats booked</dt>
+            <dd>{booking.seats}</dd>
+          </div>
+          <div>
+            <dt>Attendee</dt>
+            <dd>{booking.attendeeName}</dd>
+          </div>
+        </dl>
+        <div className="pass__barcode" aria-hidden="true">
+          {booking.bookingId.split('').map((c, i) => (
+            <span key={i} style={{ '--w': (c.charCodeAt(0) % 3) + 1 }} />
+          ))}
+        </div>
+      </div>
+
+      <div className="confirmation__actions">
+        <Button to="/dashboard" icon="ticket" data-autofocus>
+          View My Bookings
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            onClose()
+            navigate('/events')
+          }}
+        >
+          Back to Events
+        </Button>
+      </div>
+    </div>
+  )
+}
