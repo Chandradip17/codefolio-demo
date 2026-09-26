@@ -5,8 +5,8 @@ import { Button, ErrorState } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { friendlyAuthError, peekNext, supabase } from '../services/supabase'
 
-// Google OAuth and email sign-in links land here with ?code=… (PKCE);
-// We exchange the code for a session explicitly and wait for AuthContext to resolve the profile.
+// Google OAuth and email sign-in links land here with ?code=… (PKCE) or hash tokens;
+// We resolve the session and navigate the user to their destination.
 export default function AuthCallback() {
   const { user, ready, refreshUser } = useAuth()
   const [exchangeError, setExchangeError] = useState(null)
@@ -20,21 +20,48 @@ export default function AuthCallback() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const code = q.get('code')
+
     if (code) {
-      supabase.auth
-        .exchangeCodeForSession(code)
-        .then(({ data, error }) => {
-          if (error) {
-            console.error('OAuth code exchange failed:', error)
-            setExchangeError(friendlyAuthError(error))
-          } else if (data?.session && refreshUser) {
-            refreshUser()
-          }
-        })
-        .catch((err) => {
-          console.error('Unexpected auth callback error:', err)
-          setExchangeError(friendlyAuthError(err))
-        })
+      // First check if Supabase detectSessionInUrl already established the session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          if (refreshUser) refreshUser()
+          return
+        }
+        // If not yet exchanged, explicitly exchange the PKCE code
+        supabase.auth
+          .exchangeCodeForSession(code)
+          .then(({ data, error }) => {
+            if (error) {
+              // Code may have just been consumed by detectSessionInUrl in parallel: recheck session
+              supabase.auth.getSession().then(({ data: { session: s } }) => {
+                if (s && refreshUser) {
+                  refreshUser()
+                } else {
+                  console.error('OAuth code exchange failed:', error)
+                  setExchangeError(friendlyAuthError(error))
+                }
+              })
+            } else if (data?.session && refreshUser) {
+              refreshUser()
+            }
+          })
+          .catch((err) => {
+            supabase.auth.getSession().then(({ data: { session: s } }) => {
+              if (s && refreshUser) {
+                refreshUser()
+              } else {
+                console.error('Unexpected auth callback error:', err)
+                setExchangeError(friendlyAuthError(err))
+              }
+            })
+          })
+      })
+    } else {
+      // Hash tokens or existing session: poll once
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session && refreshUser) refreshUser()
+      })
     }
   }, [refreshUser])
 
@@ -42,6 +69,11 @@ export default function AuthCallback() {
     const t = setTimeout(() => setTimedOut(true), 15000)
     return () => clearTimeout(t)
   }, [])
+
+  // If user is resolved, always navigate into the application immediately
+  if (user) {
+    return <Navigate to={!user.onboarded ? '/onboarding' : peekNext() || (user.role === 'organizer' ? '/admin' : '/dashboard')} replace />
+  }
 
   const errorMsg = urlError || exchangeError
 
@@ -60,6 +92,6 @@ export default function AuthCallback() {
       </div>
     )
   }
-  if (!ready || !user) return <PageSpinner />
-  return <Navigate to={!user.onboarded ? '/onboarding' : peekNext() || (user.role === 'organizer' ? '/admin' : '/dashboard')} replace />
+
+  return <PageSpinner />
 }
