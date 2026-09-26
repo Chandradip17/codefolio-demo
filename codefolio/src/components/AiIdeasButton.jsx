@@ -7,8 +7,9 @@ import { useAuth } from '../context/AuthContext'
 import { cx } from '../utils/format'
 
 // Pages where a floating control would get in the way (sign-in flow, the chat
-// composer, projector screens) or where the assistant already fills the page.
-const HIDDEN = [/^\/(login|signup|onboarding|auth\/callback|forgot-password|reset-password)/, /^\/hackathons\/(.+\/)?chat$/, /^\/demo\//, /^\/idea-assistant/]
+// composer, Demo Day screens, which should stay distraction-free) or where the
+// assistant already fills the page.
+const HIDDEN = [/^\/(login|signup|onboarding|auth\/callback|forgot-password|reset-password)/, /^\/hackathons\/(.+\/)?chat$/, /^\/demo\//, /^\/judge\/demo\//, /^\/organizer\/demo-day/, /^\/idea-assistant/]
 
 // Standalone entry to the AI Idea Assistant: bottom-left, members only
 // (generation itself is authenticated and membership-checked on the server).
