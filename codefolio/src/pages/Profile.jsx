@@ -32,6 +32,9 @@ export default function Profile({ embedded }) {
               Host events on Codefolio <Icon name="arrowRight" size={14} />
             </Link>
           )}
+          <Link to={user.isJudge ? '/judge/dashboard' : '/judge/apply'} className="link link--arrow">
+            {user.isJudge ? 'Judge Dashboard' : 'Apply to become a judge'} <Icon name="arrowRight" size={14} />
+          </Link>
         </aside>
         <div>
           <ProfileForm mode="edit" onSaved={() => toast({ title: 'Profile updated' })} />

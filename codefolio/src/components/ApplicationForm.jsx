@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from './Icon'
 import { Button, Input, Segmented, Select, Textarea } from './ui'
 import { useAuth } from '../context/AuthContext'
@@ -201,6 +202,14 @@ function Participation({ event, value, onChange, error }) {
           : !soloOk
             ? `Solo participation is off: ${limits.toLowerCase()} Create a team or join one with a code.`
             : `${limits} You can also take part solo.`}
+        {teamOk && (
+          <>
+            {' '}
+            <Link className="link" to={`/team-matcher?h=${encodeURIComponent(event.id)}`}>
+              Need teammates? Find them with Team Matcher
+            </Link>
+          </>
+        )}
       </p>
 
       {value.mode === 'team_create' && (

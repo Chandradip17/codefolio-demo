@@ -26,6 +26,7 @@ export function toEvent(r, { withPayment = false } = {}) {
     theme: r.theme || null,
     teamMin: r.team_min ?? null,
     teamMax: r.team_max ?? null,
+    resultsPublishedAt: r.results_published_at || null,
     teamSize: r.team_min && r.team_max ? (r.team_min === r.team_max ? `${r.team_min}` : `${r.team_min}–${r.team_max}`) : null,
     organizerChapter: r.organizer_chapter,
     capacity: r.capacity,
@@ -128,6 +129,7 @@ export function toUser(r) {
     username: r.username || null,
     avatarUrl: r.avatar_url || null,
     isAdmin: r.platform_role === 'admin',
+    isJudge: Boolean(r.is_judge),
   }
 }
 

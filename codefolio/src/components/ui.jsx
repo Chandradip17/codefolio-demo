@@ -31,6 +31,8 @@ const CATEGORY_META = {
   hackathon: { label: 'Hackathon', icon: 'trophy' },
   workshop: { label: 'Workshop', icon: 'wrench' },
   gdg: { label: 'GDG Event', icon: 'users' },
+  competition: { label: 'Competition', icon: 'zap' },
+  event: { label: 'Event', icon: 'calendar' },
 }
 export const categoryLabel = (c) => CATEGORY_META[c]?.label || 'Event'
 
@@ -55,9 +57,11 @@ export function CategoryBadge({ category }) {
 const SOURCE_META = {
   gdg: { label: 'Live · GDG', tone: 'live' },
   devfolio: { label: 'Live · Devfolio', tone: 'live' },
+  unstop: { label: 'Live · Unstop', tone: 'live' },
 }
 export function SourceBadge({ event }) {
   if (event.source === 'codefolio') return event.isSample ? <Badge tone="sample">Sample</Badge> : <Badge tone="neutral">Codefolio</Badge>
+  if (event.mock) return <Badge tone="sample">Mock · {SOURCE_META[event.source]?.label.replace('Live · ', '')}</Badge>
   const m = SOURCE_META[event.source]
   return (
     <Badge tone={m.tone} className="badge--dot">
@@ -79,11 +83,14 @@ export function StatusBadge({ status }) {
       Rejected: 'danger',
       Removed: 'danger',
       Draft: 'warn',
+      Reviewed: 'success',
       pending: 'warn',
       approved: 'success',
       rejected: 'danger',
     }[status] || 'neutral'
-  return <Badge tone={tone}>{status}</Badge>
+  // Consistent capitalisation whatever the source (e.g. judge applications store 'pending').
+  const label = typeof status === 'string' && status ? status.charAt(0).toUpperCase() + status.slice(1) : status
+  return <Badge tone={tone}>{label}</Badge>
 }
 
 function Field({ label, error, hint, id, children, required, className }) {

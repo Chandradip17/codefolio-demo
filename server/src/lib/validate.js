@@ -24,6 +24,54 @@ const lines = z
   .max(20)
   .default([])
 
+// ---------- judges ----------
+// Profile links use the same formats the profile table enforces.
+const optionalUrl = (re, message) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().trim().regex(re, message).nullish())
+const tagList = (max, each) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' ? v.split(',') : v),
+    z.array(z.string().trim().max(each)).max(max).transform((a) => [...new Set(a.filter(Boolean))]),
+  )
+export const judgeApplicationSchema = z.object({
+  jobTitle: z.string().trim().min(2, 'Enter your current role or profession.').max(120),
+  organization: z.string().trim().min(2, 'Enter your organization, company or university.').max(120),
+  experienceYears: z.coerce.number({ message: 'Enter your years of experience.' }).int('Use whole years.').min(0).max(60, 'At most 60 years.'),
+  skills: tagList(30, 40).default([]),
+  expertise: tagList(20, 60).default([]),
+  judgingExperience: z.string().trim().max(1000).default(''),
+  linkedinUrl: optionalUrl(/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/(in|company)\/[^\s/]+\/?$/i, 'Use your LinkedIn profile link, e.g. https://www.linkedin.com/in/you'),
+  githubUrl: optionalUrl(/^https:\/\/(www\.)?github\.com\/[A-Za-z0-9_.-]+\/?$/i, 'Use your GitHub profile link, e.g. https://github.com/you'),
+  portfolioUrl: optionalUrl(/^https?:\/\/[^\s]+\.[^\s]+$/i, 'Enter a full link starting with https://'),
+  bio: z.string().trim().max(600).default(''),
+  reason: z.string().trim().min(20, 'Tell us why (at least 20 characters).').max(1500),
+})
+
+export const projectSchema = z.object({
+  eventId: z.string().trim().min(1).max(64),
+  title: z.string().trim().min(3, 'Give your project a name (3+ characters).').max(120),
+  problemStatement: z.string().trim().min(10, 'Describe the problem (10+ characters).').max(2000),
+  description: z.string().trim().min(30, 'Describe the project (30+ characters).').max(6000),
+  techStack: tagList(20, 40).default([]),
+  githubUrl: z.string().trim().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/i, 'Use the repository link, e.g. https://github.com/team/project'),
+  demoUrl: optionalUrl(/^https?:\/\/[^\s]+\.[^\s]+$/i, 'Enter a full link starting with https://'),
+  videoUrl: optionalUrl(/^https?:\/\/[^\s]+\.[^\s]+$/i, 'Enter a full link starting with https://'),
+})
+
+const score = z.coerce
+  .number({ message: 'Enter a score from 0 to 10.' })
+  .min(0, 'Scores go from 0 to 10.')
+  .max(10, 'Scores go from 0 to 10.')
+  .refine((n) => Math.round(n * 10) === n * 10, 'Use at most one decimal place.')
+export const judgeReviewSchema = z.object({
+  innovation: score,
+  technical: score,
+  impact: score,
+  uiux: score,
+  presentation: score,
+  feedback: z.string().trim().max(4000, 'Keep feedback under 4000 characters.').default(''),
+})
+
 export const signupSchema = z
   .object({
     name: z.string().trim().min(2, 'Enter your full name.').max(80),
@@ -33,6 +81,8 @@ export const signupSchema = z
     city: z.string().trim().max(60).default(''),
     chapter: z.string().trim().max(80).default(''),
     bio: z.string().trim().max(600).default(''),
+    // "Apply to become a Judge" at sign-up (an application, not the role itself).
+    judge: judgeApplicationSchema.nullish(),
   })
   .superRefine((v, ctx) => {
     if (v.role !== 'organizer') return

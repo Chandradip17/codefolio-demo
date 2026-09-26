@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { CITIES } from '../data/chapters'
 import { rememberNext } from '../services/supabase'
+import JudgeFields, { emptyJudge, judgeFieldErrors, toJudgePayload, validateJudge } from '../components/JudgeFields'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -18,12 +19,17 @@ export default function Signup() {
   const [params] = useSearchParams()
   const [role, setRole] = useState(params.get('role') === 'organizer' ? 'organizer' : 'attendee')
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', chapter: '', city: '', bio: '' })
+  // "Apply to become a Judge": an application for an admin to review, not the role itself.
+  const [applyJudge, setApplyJudge] = useState(params.get('judge') === '1')
+  const [judge, setJudge] = useState(emptyJudge())
+  const [judgeErrors, setJudgeErrors] = useState({})
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
 
   // Signed-in members who click "Become an Organizer" go to the host request page.
   if (user && !busy && params.get('role') === 'organizer' && user.role !== 'organizer') return <Navigate to="/host" replace />
+  if (user && !busy && params.get('judge') === '1') return <Navigate to="/judge/apply" replace />
   if (user && !busy) return <Navigate to={!user.onboarded ? '/onboarding' : user.role === 'organizer' ? '/admin' : '/dashboard'} replace />
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
@@ -40,7 +46,9 @@ export default function Signup() {
       if (form.bio.trim().length < 20) e.bio = 'Tell attendees a little more (at least 20 characters).'
     }
     setErrors(e)
-    return !Object.keys(e).length
+    const je = applyJudge ? validateJudge(judge) : {}
+    setJudgeErrors(je)
+    return !Object.keys(e).length && !Object.keys(je).length
   }
 
   async function submit(ev) {
@@ -52,14 +60,23 @@ export default function Signup() {
     }
     setBusy(true)
     try {
-      const u = await signup({ ...form, role })
+      const u = await signup({ ...form, role, ...(applyJudge ? { judge: toJudgePayload(judge) } : {}) })
       toast({
         title: 'Welcome to Codefolio! 🎉',
-        message: role === 'organizer' ? 'Your host request was sent. An admin will review it soon.' : 'Your next event is waiting.',
+        message:
+          role === 'organizer'
+            ? 'Your host request was sent. An admin will review it soon.'
+            : applyJudge
+              ? 'Your judge application was sent. An admin will review it soon.'
+              : 'Your next event is waiting.',
       })
-      rememberNext(location.state?.from || (role === 'organizer' ? '/host' : '/events'))
+      rememberNext(location.state?.from || (role === 'organizer' ? '/host' : applyJudge ? '/judge/apply' : '/events'))
       navigate(u.onboarded ? location.state?.from || '/events' : '/onboarding', { replace: true })
     } catch (e) {
+      if (e.fields) {
+        setErrors((x) => ({ ...x, ...e.fields }))
+        setJudgeErrors((x) => ({ ...x, ...judgeFieldErrors(e.fields) }))
+      }
       setFormError(e.message)
       setBusy(false)
     }
@@ -83,6 +100,15 @@ export default function Signup() {
       <p className="small muted role-hint">
         {role === 'attendee' ? 'Book seats, track your events and get confirmations.' : 'Host events, manage capacity and see your attendee lists.'}
       </p>
+      <label className="check-row judge-opt">
+        <input type="checkbox" checked={applyJudge} onChange={(e) => setApplyJudge(e.target.checked)} />
+        <span>Apply to become a Judge</span>
+      </label>
+      {applyJudge && (
+        <p className="small muted role-hint">
+          This sends a judge application. Your account works normally while an admin reviews it; judging opens once you’re approved.
+        </p>
+      )}
 
       <form onSubmit={submit} noValidate className="form-stack">
         {formError && (
@@ -117,6 +143,12 @@ export default function Signup() {
               error={errors.bio}
               required
             />
+          </div>
+        )}
+
+        {applyJudge && (
+          <div className="organizer-fields">
+            <JudgeFields value={judge} onChange={setJudge} errors={judgeErrors} />
           </div>
         )}
 

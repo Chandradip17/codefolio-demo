@@ -12,7 +12,15 @@ export function PageSpinner() {
 }
 
 // role: 'organizer' = approved hosts (and platform admins); 'admin' = platform admins.
-const allowed = (user, role) => !role || (role === 'admin' ? user.isAdmin : role === 'organizer' ? user.role === 'organizer' || user.isAdmin : user.role === role)
+const allowed = (user, role) =>
+  !role ||
+  (role === 'admin'
+    ? user.isAdmin
+    : role === 'judge'
+      ? user.isJudge
+      : role === 'organizer'
+        ? user.role === 'organizer' || user.isAdmin
+        : user.role === role)
 
 // Signed in + onboarded (+ optional role). The database enforces access with RLS;
 // this decides which screen to show and remembers where the visitor was going.
@@ -29,6 +37,22 @@ export default function ProtectedRoute({ role, children }) {
   if (!user.onboarded) {
     rememberNext(here)
     return <Navigate to="/onboarding" replace />
+  }
+  if (!allowed(user, role) && role === 'judge') {
+    return (
+      <div className="container page-pad">
+        <EmptyState
+          icon="lock"
+          title="Judges only"
+          message="The Judge Dashboard is for approved judges. Apply to become a judge and an administrator will review your application."
+          action={
+            <Button to="/judge/apply" iconRight="arrowRight">
+              Judge application
+            </Button>
+          }
+        />
+      </div>
+    )
   }
   if (!allowed(user, role)) {
     const host = role === 'organizer'

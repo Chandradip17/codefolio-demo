@@ -5,6 +5,8 @@ import { Button } from './ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { cx } from '../utils/format'
+import logoDark from '../assets/codefolio-logo.png'
+import logoLight from '../assets/codefolio-logo-light.png'
 
 const LINKS = [
   { to: '/', label: 'Home', end: true },
@@ -16,14 +18,7 @@ const LINKS = [
 export function Logo({ light }) {
   return (
     <Link to="/" className={cx('logo', light && 'logo--light')} aria-label="Codefolio home">
-      <span className="logo__mark" aria-hidden="true">
-        <span>{'{'}</span>
-        <span className="logo__dot" />
-        <span>{'}'}</span>
-      </span>
-      <span className="logo__text">
-        Code<span>folio</span>
-      </span>
+      <img className="logo__img" src={light ? logoLight : logoDark} alt="Codefolio" width="166" height="40" />
     </Link>
   )
 }

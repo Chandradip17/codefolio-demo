@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Modal from './Modal'
 import Icon from './Icon'
 import ApplicationForm, { teamLimits } from './ApplicationForm'
@@ -10,7 +10,7 @@ import { useData } from '../context/DataContext'
 import { useToast } from '../context/ToastContext'
 import { useCloseEvent } from '../hooks/useOpenEvent'
 import { rememberNext } from '../services/supabase'
-import { compactNumber, cx, formatDate, formatDateTime, formatTime } from '../utils/format'
+import { compactNumber, cx, formatDate, formatDateTime, formatTime, isPast } from '../utils/format'
 import { fallbackImage } from '../data/images'
 import { CopyCode } from './BookingCard'
 
@@ -116,12 +116,30 @@ function EventDetails({ event, onBooked }) {
     cta = (
       <>
         <Button href={event.externalUrl} size="lg" iconRight="external" className="btn--block">
-          {event.source === 'gdg' ? 'Register on GDG Community' : 'Apply on Devfolio'}
+          {event.source === 'gdg' ? 'Register on GDG Community' : event.source === 'unstop' ? 'Register on Unstop' : 'Apply on Devfolio'}
         </Button>
-        <p className="cta-note">
-          <Icon name="info" size={14} /> Live listing from {event.source === 'gdg' ? 'gdg.community.dev' : 'devfolio.co'}. Registration
-          happens on their site.
-        </p>
+        {event.source === 'unstop' ? (
+          <p className="cta-note">
+            <Icon name="info" size={14} />{' '}
+            {event.mock ? (
+              <span>
+                <strong>Mock data</strong> for local development. This listing is not real.
+              </span>
+            ) : (
+              <span>
+                Source: Unstop. Listed on Unstop, not hosted by Codefolio; registration happens on their site.{' '}
+                <a className="link" href={event.sourceUrl} target="_blank" rel="noopener noreferrer">
+                  View on Unstop <Icon name="external" size={12} />
+                </a>
+              </span>
+            )}
+          </p>
+        ) : (
+          <p className="cta-note">
+            <Icon name="info" size={14} /> Live listing from {event.source === 'gdg' ? 'gdg.community.dev' : 'devfolio.co'}. Registration
+            happens on their site.
+          </p>
+        )}
       </>
     )
   } else if (cancelled) {
@@ -365,6 +383,34 @@ function EventDetails({ event, onBooked }) {
                   {event.applicationFee > 0 ? `₹${event.applicationFee.toLocaleString('en-IN')} (UPI)` : 'Free'}
                 </Row>
               )}
+              {isLocal && event.category === 'hackathon' && (event.teamMax ?? 4) >= 2 && !event.resultsPublishedAt && !isPast(event.date) && (
+                <Row icon="users" label="Teammates">
+                  <Link className="link" to={`/team-matcher?h=${encodeURIComponent(event.id)}`}>
+                    Find teammates <Icon name="arrowRight" size={13} />
+                  </Link>
+                </Row>
+              )}
+              {existing && event.category === 'hackathon' && (
+                <Row icon="users" label="Participant chat">
+                  <Link className="link" to={`/hackathons/${encodeURIComponent(event.id)}/chat`}>
+                    Open chat <Icon name="arrowRight" size={13} />
+                  </Link>
+                </Row>
+              )}
+              {isLocal && event.category === 'hackathon' && !event.resultsPublishedAt && !isPast(event.endDate || event.date) && (
+                <Row icon="sparkles" label="Project idea">
+                  <Link className="link" to={`/idea-assistant?h=${encodeURIComponent(event.id)}`}>
+                    Idea Assistant <Icon name="arrowRight" size={13} />
+                  </Link>
+                </Row>
+              )}
+              {isLocal && event.resultsPublishedAt && (
+                <Row icon="trophy" label="Results">
+                  <Link className="link" to={`/results/${event.id}`}>
+                    View results <Icon name="arrowRight" size={13} />
+                  </Link>
+                </Row>
+              )}
               {event.theme && (
                 <Row icon="sparkles" label="Theme / track">
                   {event.theme}
@@ -375,9 +421,19 @@ function EventDetails({ event, onBooked }) {
                   {formatDateTime(event.applicationsOpenAt)} IST
                 </Row>
               )}
-              {event.applicationsCloseAt ? (
-                <Row icon="alert" label="Application deadline">
-                  {formatDateTime(event.applicationsCloseAt)} IST
+              {event.source === 'unstop' && (
+                <Row icon="layers" label="Type">
+                  {event.eventTypeLabel}
+                </Row>
+              )}
+              {event.eligibility && (
+                <Row icon="user" label="Eligibility">
+                  {event.eligibility}
+                </Row>
+              )}
+              {event.applicationsCloseAt || event.registrationDeadlineAt ? (
+                <Row icon="alert" label={event.applicationsCloseAt ? 'Application deadline' : 'Registration closes'}>
+                  {formatDateTime(event.applicationsCloseAt || event.registrationDeadlineAt)} IST
                 </Row>
               ) : event.registrationDeadline && (
                 <Row icon="alert" label="Registration closes">

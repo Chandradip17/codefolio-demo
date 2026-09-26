@@ -11,6 +11,7 @@ import { CITIES } from '../data/chapters'
 import { dateBucketMatch } from '../utils/format'
 
 const PAGE = 12
+const COMPETITION_OPT = { value: 'competition', label: 'Competitions', icon: 'zap' }
 const SECTION_OPTS = [
   { value: 'all', label: 'All', icon: 'layers' },
   { value: 'hackathon', label: 'Hackathons', icon: 'trophy' },
@@ -29,7 +30,8 @@ function matches(e, q) {
 }
 
 export default function Events() {
-  const { catalogue, localStatus, gdgStatus, dfStatus, refreshLive, loadLocal } = useData()
+  const { catalogue, localStatus, gdgStatus, dfStatus, unstopStatus, refreshLive, loadLocal } = useData()
+  const unstopOn = unstopStatus.configured
   const [params, setParams] = useSearchParams()
   const [drawer, setDrawer] = useState(false)
   const [limit, setLimit] = useState(PAGE)
@@ -94,16 +96,18 @@ export default function Events() {
   )
 
   const sectionCounts = useMemo(() => {
-    const c = { all: base.length, hackathon: 0, workshop: 0, gdg: 0 }
-    for (const e of base) c[e.category]++
+    const c = { all: base.length, hackathon: 0, workshop: 0, gdg: 0, competition: 0 }
+    for (const e of base) if (e.category in c) c[e.category]++
     return c
   }, [base])
 
   const results = section === 'all' ? base : base.filter((e) => e.category === section)
   const activeFilters = Object.entries(filters).filter(([k, v]) => v !== FILTER_DEFAULTS[k]).length
   const anyActive = activeFilters > 0 || q || section !== 'all'
-  const loading = localStatus.loading || gdgStatus.loading || dfStatus.loading
-  const liveErrors = [gdgStatus.error && 'GDG Community', dfStatus.error && 'Devfolio'].filter(Boolean)
+  const loading = localStatus.loading || gdgStatus.loading || dfStatus.loading || (unstopOn && unstopStatus.loading)
+  const liveErrors = [gdgStatus.error && 'GDG Community', dfStatus.error && 'Devfolio', unstopOn && unstopStatus.error && 'Unstop'].filter(Boolean)
+  // The Competitions tab only exists when a source (Unstop) actually lists competitions.
+  const sectionOpts = catalogue.some((e) => e.category === 'competition') ? [...SECTION_OPTS.slice(0, 3), COMPETITION_OPT, SECTION_OPTS[3]] : SECTION_OPTS
 
   const clearAll = () => {
     setQuery('')
@@ -147,13 +151,13 @@ export default function Events() {
             label="Event type"
             value={section}
             onChange={(v) => update({ section: v })}
-            options={SECTION_OPTS.map((o) => ({ ...o, count: sectionCounts[o.value] }))}
+            options={sectionOpts.map((o) => ({ ...o, count: sectionCounts[o.value] }))}
           />
         </div>
 
         <div className="filter-bar">
           <div className="filter-bar__desktop">
-            <EventFilters values={filters} onChange={(v) => update(v)} />
+            <EventFilters values={filters} onChange={(v) => update(v)} unstop={unstopOn} />
           </div>
           <Button variant="secondary" icon="filter" className="filter-bar__mobile-btn" onClick={() => setDrawer(true)}>
             Filters{activeFilters ? ` (${activeFilters})` : ''}
@@ -237,7 +241,7 @@ export default function Events() {
           </>
         }
       >
-        <EventFilters values={filters} onChange={(v) => update(v)} layout="stack" />
+        <EventFilters values={filters} onChange={(v) => update(v)} layout="stack" unstop={unstopOn} />
       </Modal>
     </>
   )

@@ -103,7 +103,71 @@ Migration: `server/supabase/migrations/20260925150000_hosting_applications_check
   - attendee: fee and UTR on the confirmation pass and ticket
 - **Tests:** `npm run smoke:fees` (7 live steps).
 
+**Judges & judging** (migration `20260926120000_judging.sql`)
+- **Becoming a judge:**
+  - "Apply to become a Judge" on Sign up, or `/judge/apply` for existing members, creates a **pending** application. Skills and links are saved to the profile.
+  - Admin → Judge applications (`/admin/judge-applications`) lists, shows details, and approves or rejects with an optional reason the applicant sees.
+  - Approval is one SQL transaction: application approved, reviewer and time recorded, `profiles.is_judge = true`.
+  - Participants keep all their normal abilities.
+- **Security:**
+  - `is_judge` is readable by members but not writable.
+  - All judging tables have RLS on with no browser access.
+  - Every write goes through service-role-only SQL functions.
+- **Projects:** approved hackathon participants submit one project per team (or per solo participant) from their ticket. Projects are locked once a judge has reviewed them.
+- **Judge workspace** (`/judge/dashboard`, `/judge/projects/:id`, approved judges only, their assigned hackathons only):
+  - scores of 0–10 for the 5 weighted criteria; the weighted score is computed in the database
+  - one review per judge per project, which the judge can update until results are published
+- **Organizer** (`/organizer/judging`, `/organizer/results/:id`):
+  - assign approved judges (pending/rejected applicants and the hackathon's own participants are refused)
+  - review progress, per-judge scores and feedback
+  - a variance flag when judges' scores are 2.5+ apart (the flag only — no automatic changes)
+  - publish or unpublish results
+- **Results:** `/results/:id` is open to members only once published, and shows no judge names or feedback. Publishing closes reviews and submissions.
+- **Analysis:**
+  - GitHub facts (languages, README, tests, CI, Docker, licence, commits) are always collected.
+  - The Gemini summary runs only when `GEMINI_API_KEY` is set in `server/.env` (model `GEMINI_MODEL`, default `gemini-2.5-flash`). It is supporting information and never scores.
+  - `GITHUB_TOKEN` (optional) raises the GitHub rate limit.
+- **Tests:** `npm run test:judging` (13 SQL/RLS) and `npm run smoke:judging` (15 live end-to-end steps).
+
+**Unstop listings** (migration `20260926150000_external_events.sql`; full guide: [unstop-integration.md](unstop-integration.md))
+- Unstop has no public API or feed, and robots.txt disallows `/api/*`, so nothing calls unstop.com.
+- Everything is built up to an authorized feed:
+  - provider (`off` / `feed` / `mock`)
+  - cache with stale fallback
+  - de-duplicated database copy
+  - `/api/unstop/*`
+  - the "Live · Unstop" source on the Events page
+  - Admin → External events
+- It stays off until `UNSTOP_PROVIDER=feed` and `UNSTOP_FEED_URL` are set.
+- **Tests:** `npm run test:unstop` (25).
+
 **Tests:** `npm run test:phase2` (33 local SQL tests) and `npm run smoke:phase2` (15 live end-to-end steps; it removes everything it creates).
+
+## Advanced hackathon features: Team Matcher, GitHub, Demo Day
+
+Details: [advanced-hackathon-features.md](advanced-hackathon-features.md). Migration `20260926180000_matcher_github_demoday.sql` (8 new tables, all RLS deny-all; rules in service-role-only SQL functions).
+
+- **Team Matcher** (`/team-matcher`, `/team-matcher/preferences`): per-hackathon preferences; deterministic, explained match score (skills 40 / goal 25 / experience 15 / availability 10 / interests 10); invitations (send, withdraw, accept, decline) with real-time notifications. Accepting shows team codes; joining still goes through the normal application.
+- **GitHub**: project ↔ repository mapping, metadata, stats and recent activity, manual sync (60 s cooldown) and auto-refresh when older than 15 min. Public repositories work now. Account connection (OAuth) needs a GitHub OAuth App (see the doc); tokens are AES-256-GCM encrypted on the server.
+- **Demo Day** (`/organizer/demo-day`, `/demo/:eventId`, `/judge/demo/:eventId`): finalists, running order, durations, start / Q&A / pause / resume / end / skip / next, and a server-timestamp timer synced in real time. Judges get private notes and the existing score form.
+- **Tests:** `npm run test:matcher-demo` (11), `npm run test:github-matching` (7), `npm run smoke:advanced` (14).
+
+## Idea Assistant, Communication Center, Organizer Analytics
+
+Details: [ideas-communication-analytics.md](ideas-communication-analytics.md). Migration `20260927100000_ideas_communication_analytics.sql` (3 new tables, RLS deny-all; rules in service-role-only SQL functions).
+
+- **Idea Assistant** (`/idea-assistant`): grounded Gemini ideas (server-side key), six refine actions, private saved ideas, import into the project form. Needs `GEMINI_API_KEY`.
+- **Communication Center** (`/organizer/communication`, `/hackathons/:id/communication`): targeted announcements (everyone / participants / judges / team), important, pinned, scheduled (IST), edit, archive, realtime delivery, read tracking, deadline reminders. No mentor role exists, so there's no mentor audience.
+- **Analytics** (`/organizer/analytics/:id`): database-aggregated registrations, teams, submissions, technologies, judging, timeline and factual insights.
+- **Tests:** `npm run test:comms-analytics` (5), `npm run test:ideas-analytics` (8), `npm run smoke:ideas-comms` (10).
+
+## Participant Chat
+
+Details: [participant-chat.md](participant-chat.md). Migration `20260927140000_participant_chat.sql` (4 new tables, RLS deny-all). This is two-way participant chat, separate from the announcement Communication Center (which is unchanged).
+
+- `/hackathons/:id/chat` for participants; `/organizer/chat` for moderation (reports, soft delete, hackathon-scoped mutes, open/close).
+- Cooldown, burst limit, maximum length, duplicate window and read-only-after-end come from `CHAT_*` env settings and are enforced in the database.
+- **Tests:** `npm run test:chat` (12), `npm run smoke:chat` (11).
 
 ## Known gaps / next decisions
 

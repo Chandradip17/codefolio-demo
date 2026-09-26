@@ -2,12 +2,16 @@ import { createApp } from './app.js'
 import { config, supabaseConfigured, missingSupabaseVars } from './lib/config.js'
 import { getDevfolioEvents, getGdgEvents } from './lib/live.js'
 import { startRelay } from './lib/realtime.js'
+import { startExternalSync } from './lib/external/index.js'
+import { startAnnouncementTicker } from './routes/announcements.js'
 
 const app = createApp()
 
 app.listen(config.port, () => {
   console.log(`Codefolio API → http://localhost:${config.port}/api`)
   startRelay()
+  startExternalSync()
+  startAnnouncementTicker()
   if (!supabaseConfigured) {
     console.warn(
       `⚠  Supabase not configured (missing ${missingSupabaseVars().join(', ')}).\n` +

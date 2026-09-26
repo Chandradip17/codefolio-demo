@@ -23,6 +23,9 @@ export default function Modal({ open, onClose, title, size = 'md', children, foo
       ;(first || panel.current)?.focus()
     }, 30)
     const onKey = (e) => {
+      // Only the top-most dialog reacts (a confirm opened from inside another dialog).
+      const dialogs = document.querySelectorAll('.modal')
+      if (dialogs.length > 1 && dialogs[dialogs.length - 1] !== panel.current) return
       if (e.key === 'Escape') {
         e.stopPropagation()
         closeRef.current?.()

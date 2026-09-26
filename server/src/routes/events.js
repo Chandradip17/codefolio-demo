@@ -6,6 +6,7 @@ import { eventColumns, toBooking, toEvent } from '../lib/mappers.js'
 import { publish } from '../lib/realtime.js'
 import { eventSchema, newEventSchema } from '../lib/validate.js'
 import { eventFormHandler } from './hosting.js'
+import { publicResultsHandler } from './judging.js'
 
 const router = Router()
 
@@ -53,6 +54,9 @@ router.get('/', async (req, res) => {
 
 // GET /api/events/:id/form: the application form applicants fill in (members only)
 router.get('/:id/form', requireAuth, eventFormHandler)
+
+// GET /api/events/:id/results: published hackathon results (members)
+router.get('/:id/results', requireAuth, publicResultsHandler)
 
 // GET /api/events/:id
 router.get('/:id', async (req, res) => {

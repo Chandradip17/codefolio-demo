@@ -100,6 +100,16 @@
   display: none;
   margin-left: auto;
 }
+/* Between the mobile menu (≤1020px) and wide screens, signed-in links + actions
+   need slightly tighter spacing to fit on one line. */
+@media (min-width: 1021px) and (max-width: 1200px) {
+  .navbar__inner {
+    gap: 12px;
+  }
+  .nav-link {
+    padding-inline: 10px;
+  }
+}
 .mobile-menu,
 .mobile-scrim {
   display: none;
@@ -1673,6 +1683,7 @@
 
 /* ============ Data table ============ */
 .table-card {
+  position: relative; /* keeps visually-hidden header labels inside the scrolling card */
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -1742,6 +1753,7 @@
 }
 .row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   justify-content: flex-end;
 }
@@ -1846,5 +1858,17 @@
   .table-tools,
   .table-tools--4 {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* brand logo image */
+.logo__img {
+  display: block;
+  height: 40px;
+  width: auto;
+}
+@media (max-width: 640px) {
+  .logo__img {
+    height: 34px;
   }
 }

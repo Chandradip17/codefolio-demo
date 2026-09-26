@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import ActivityFeed from '../components/ActivityFeed'
 import BookingCard from '../components/BookingCard'
 import CheckInPass from '../components/CheckInPass'
+import ProjectModal from '../components/ProjectModal'
+import * as api from '../services/api'
 import FillingFast from '../components/FillingFast'
 import { LiveIndicator, LiveNumber } from '../components/LiveBits'
 import NextUpCard from '../components/NextUpCard'
@@ -15,15 +18,46 @@ import { isPast } from '../utils/format'
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { bookings, events, localStatus, loadLocal, cancelBooking } = useData()
+  const { bookings, events, localStatus, loadLocal, cancelBooking, subscribe } = useData()
   const toast = useToast()
   const [tab, setTab] = useState('upcoming')
   const [target, setTarget] = useState(null)
   const [busy, setBusy] = useState(false)
   const [qrFor, setQrFor] = useState(null)
+  const [projects, setProjects] = useState([])
+  const [projectFor, setProjectFor] = useState(null)
+  const [params, setParams] = useSearchParams()
+  const [unread, setUnread] = useState(0)
+
+  // Unread hackathon announcements (kept current by the realtime stream).
+  useEffect(() => {
+    const load = () => api.unreadAnnouncements().then((r) => setUnread(r.total), () => {})
+    load()
+    return subscribe((type) => (type === 'announcement.published' || type === 'announcement.updated') && load())
+  }, [subscribe])
+
+  // Back from GitHub's OAuth screen (?github=connected|error).
+  useEffect(() => {
+    const g = params.get('github')
+    if (!g) return
+    toast(
+      g === 'connected'
+        ? { title: 'GitHub connected', message: 'You can now pick your repositories from your project.' }
+        : { title: 'GitHub not connected', message: params.get('reason') === 'expired' ? 'The link expired. Please try again.' : 'GitHub didn’t complete the connection. Please try again.', tone: 'error' },
+    )
+    setParams({}, { replace: true })
+  }, [params, setParams, toast])
 
   const mine = useMemo(() => bookings.filter((b) => b.userId === user.id), [bookings, user.id])
   const eventById = useMemo(() => Object.fromEntries(events.map((e) => [e.id, e])), [events])
+
+  // Hackathon projects the member is part of (only fetched if they have an approved hackathon ticket).
+  const hasHackathon = mine.some((b) => b.event?.category === 'hackathon' && ['Confirmed', 'Attended'].includes(b.status))
+  useEffect(() => {
+    if (!hasHackathon) return
+    api.myProjects().then(setProjects, () => setProjects([]))
+  }, [hasHackathon])
+  const projectOf = (b) => projects.find((p) => p.eventId === b.eventId)
 
   const groups = useMemo(() => {
     const upcoming = []
@@ -80,6 +114,20 @@ export default function Dashboard() {
         </div>
         <div className="dash-head__actions">
           <LiveIndicator />
+          {user.isJudge && (
+            <Button to="/judge/dashboard" variant="secondary" icon="bar">
+              Judge Dashboard
+            </Button>
+          )}
+          <Button to="/hackathons/communication" variant="secondary" icon="radio">
+            Updates{unread ? ` (${unread})` : ''}
+          </Button>
+          <Button to="/hackathons/chat" variant="secondary" icon="users">
+            Participant chat
+          </Button>
+          <Button to="/team-matcher" variant="secondary" icon="users">
+            Team Matcher
+          </Button>
           <Button to="/events" icon="search">
             Find events
           </Button>
@@ -134,6 +182,8 @@ export default function Dashboard() {
                     liveEvent={eventById[b.eventId]}
                     onCancel={setTarget}
                     onShowQr={setQrFor}
+                    project={projectOf(b)}
+                    onProject={setProjectFor}
                   />
                 ))}
               </div>
@@ -190,6 +240,17 @@ export default function Dashboard() {
         }
       />
       <CheckInPass booking={qrFor} open={Boolean(qrFor)} onClose={() => setQrFor(null)} />
+      {projectFor && (
+        <ProjectModal
+          booking={projectFor}
+          project={projectOf(projectFor)}
+          onClose={() => setProjectFor(null)}
+          onSaved={(p) => {
+            setProjects((list) => [p, ...list.filter((x) => x.id !== p.id)])
+            setProjectFor(null)
+          }}
+        />
+      )}
     </div>
   )
 }

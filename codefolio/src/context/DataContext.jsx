@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../services/api'
-import { applyGdgDetail, fetchDevfolioHackathons, fetchGdgDetail, fetchGdgIndiaEvents } from '../services/liveApi'
+import { applyGdgDetail, fetchDevfolioHackathons, fetchGdgDetail, fetchGdgIndiaEvents, fetchUnstopEvents } from '../services/liveApi'
 import { connectStream } from '../services/realtime'
 import { isPast, todayISO } from '../utils/format'
 import { useAuth } from './AuthContext'
@@ -98,9 +98,17 @@ export function DataProvider({ children }) {
     })
   }, [ready, loadLocal, user])
 
+  // Pages that need raw realtime messages (Demo Day, Team Matcher) subscribe here.
+  const listeners = useRef(new Set())
+  const subscribe = useCallback((fn) => {
+    listeners.current.add(fn)
+    return () => listeners.current.delete(fn)
+  }, [])
+
   const handleMessage = useCallback(
     (type, data) => {
       if (type === 'hello') return
+      listeners.current.forEach((fn) => fn(type, data))
       const { events: evs, bookings: bks, hostBookings: hbks, user: me } = stateRef.current
       setLive((l) => ({ ...l, lastEventAt: Date.now() }))
       const myEventIds = new Set(bks.filter((b) => ['Pending', 'Confirmed'].includes(b.status)).map((b) => b.eventId))
@@ -145,6 +153,52 @@ export function DataProvider({ children }) {
             pushActivity([{ key: `team:${t.id}:${joined.userId}`, tone: 'success', icon: 'users', title: `${joined.name} joined ${t.name}`, text: `${t.size} members now`, eventId: mine.eventId, toast: true }])
           }
         }
+      } else if (type === 'judge.application.updated') {
+        const a = data.application
+        const ok = a.status === 'approved'
+        pushActivity([
+          {
+            key: `judge:${a.id}:${a.status}`,
+            tone: ok ? 'success' : 'danger',
+            icon: ok ? 'checkCircle' : 'ban',
+            title: ok ? 'You’re now a Codefolio Judge 🎉' : 'Judge application not approved',
+            text: ok ? 'Open the Judge Dashboard from your dashboard.' : a.note || 'You can update your details and apply again.',
+            toast: true,
+          },
+        ])
+        refreshUser()
+      } else if (type === 'judge.assigned') {
+        pushActivity([{ key: `judge-assigned:${data.eventId}`, tone: 'info', icon: 'trophy', title: `You’re judging ${data.title}`, text: 'Its projects are on your Judge Dashboard.', toast: true }])
+      } else if (type === 'chat.muted') {
+        // Moderation notices only; ordinary chat messages never notify.
+        pushActivity([
+          data.mutedUntil
+            ? { key: `chat-mute:${data.eventId}:${data.mutedUntil}`, tone: 'danger', icon: 'ban', title: 'Your chat messages are paused', text: `A moderator paused your participant chat messages until ${new Date(data.mutedUntil).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })} IST.`, toast: true }
+            : { key: `chat-unmute:${data.eventId}:${Date.now()}`, tone: 'success', icon: 'checkCircle', title: 'You can chat again', text: 'A moderator lifted your chat pause.', toast: true },
+        ])
+      } else if (type === 'chat.report') {
+        pushActivity([{ key: `chat-report:${data.eventId}:${Date.now()}`, tone: 'info', icon: 'alert', title: 'A chat message was reported', text: `${data.eventTitle || 'Hackathon'} · review it in Chat moderation.`, toast: true }])
+      } else if (type === 'announcement.published') {
+        pushActivity([
+          {
+            key: `announce:${data.id}`,
+            tone: data.important ? 'danger' : 'info',
+            icon: data.important ? 'alert' : 'radio',
+            title: data.important ? `Important · ${data.title}` : data.title,
+            text: `${data.eventTitle || 'Hackathon'} · new announcement`,
+            eventId: data.eventId,
+            toast: true,
+          },
+        ])
+      } else if (type === 'team.request') {
+        const labels = {
+          pending: ['info', 'users', `${data.from} invited you to team up`, 'Open Team Matcher to accept or decline.'],
+          accepted: ['success', 'checkCircle', `${data.from} accepted your invitation`, 'Open Team Matcher to see their team code.'],
+          rejected: ['danger', 'ban', `${data.from} declined your invitation`, 'Keep looking — there are more matches.'],
+          cancelled: ['info', 'ban', `${data.from} withdrew their invitation`, ''],
+        }
+        const l = labels[data.status]
+        if (l) pushActivity([{ key: `team-req:${data.eventId}:${data.from}:${data.status}:${Date.now()}`, tone: l[0], icon: l[1], title: l[2], text: l[3], eventId: data.eventId, toast: true }])
       } else if (type === 'host.request.updated') {
         const r = data.request
         const ok = r.status === 'approved'
@@ -207,6 +261,22 @@ export function DataProvider({ children }) {
     }
   }, [])
 
+  // Unstop (only when the server has an authorized provider configured).
+  const [unstop, setUnstop] = useState([])
+  const [unstopStatus, setUnstopStatus] = useState({ ...idle, configured: false, mock: false })
+  const unRetry = useRef(null)
+  const loadUnstop = useCallback(async (retriesLeft = ENRICH_POLLS) => {
+    clearTimeout(unRetry.current)
+    try {
+      const { events: list, configured, mock, updatedAt } = await fetchUnstopEvents()
+      setUnstop(list)
+      setUnstopStatus({ loading: false, error: null, updatedAt, configured, mock })
+    } catch (e) {
+      setUnstopStatus((s) => ({ ...s, loading: false, error: e.message, configured: true }))
+      if (retriesLeft > 0) unRetry.current = setTimeout(() => loadUnstop(retriesLeft - 1), RETRY_MS)
+    }
+  }, [])
+
   const dfRetry = useRef(null)
   const loadDevfolio = useCallback(async (force, retriesLeft = ENRICH_POLLS) => {
     clearTimeout(dfRetry.current)
@@ -224,9 +294,10 @@ export function DataProvider({ children }) {
     async ({ force = false } = {}) => {
       setGdgStatus((s) => ({ ...s, loading: true, error: null }))
       setDfStatus((s) => ({ ...s, loading: true, error: null }))
-      await Promise.all([loadGdg(force), loadDevfolio(force)])
+      setUnstopStatus((s) => ({ ...s, loading: true, error: null }))
+      await Promise.all([loadGdg(force), loadDevfolio(force), loadUnstop()])
     },
-    [loadGdg, loadDevfolio],
+    [loadGdg, loadDevfolio, loadUnstop],
   )
 
   useEffect(() => {
@@ -236,6 +307,7 @@ export function DataProvider({ children }) {
       clearInterval(t)
       clearTimeout(pollTimer.current)
       clearTimeout(dfRetry.current)
+      clearTimeout(unRetry.current)
     }
   }, [refreshLive])
 
@@ -342,8 +414,8 @@ export function DataProvider({ children }) {
     const today = todayISO()
     // Upcoming events by start time; already-running ones go after them.
     const key = (e) => `${e.date < today ? '1' : '0'}${e.date}${e.time || ''}`
-    return [...local, ...gdg, ...devfolio].sort((a, b) => key(a).localeCompare(key(b)))
-  }, [events, gdg, devfolio])
+    return [...local, ...gdg, ...devfolio, ...unstop].sort((a, b) => key(a).localeCompare(key(b)))
+  }, [events, gdg, devfolio, unstop])
 
   const getEvent = useCallback((id) => catalogue.find((e) => e.id === id) || events.find((e) => e.id === id), [catalogue, events])
 
@@ -365,9 +437,11 @@ export function DataProvider({ children }) {
     catalogue,
     gdg,
     devfolio,
+    unstop,
     localStatus,
     gdgStatus,
     dfStatus,
+    unstopStatus,
     loadLocal,
     refreshLive,
     ensureDetail,
@@ -382,6 +456,7 @@ export function DataProvider({ children }) {
     updateEvent,
     cancelEvent,
     deleteEvent,
+    subscribe,
   }
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

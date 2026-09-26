@@ -1,0 +1,6 @@
+# Secrets: never commit environment files (templates stay tracked).
+.env
+.env.*
+*.env
+!.env.example
+!**/.env.example

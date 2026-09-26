@@ -55,7 +55,9 @@ async function request(path, { method = 'GET', body, auth = true, retry = true }
   if (!res.ok) {
     const err = data?.error
     const fallback = res.status === 502 || res.status === 504 ? "Can't reach the Codefolio server. Is the API running?" : `Request failed (${res.status})`
-    throw new ApiError(err?.message || fallback, res.status, err?.code || 'http', err?.fields)
+    const e = new ApiError(err?.message || fallback, res.status, err?.code || 'http', err?.fields)
+    if (err?.retryAfter) e.retryAfter = err.retryAfter // e.g. chat cooldown / rate limit (seconds, from the server)
+    throw e
   }
   return data
 }
@@ -120,7 +122,7 @@ export const resetPassword = (accessToken, password) => request('/auth/reset', {
 
 // ---------- profiles (direct, RLS) ----------
 const PROFILE_COLS =
-  'id, name, username, avatar_url, college, company, bio, skills, github_url, linkedin_url, portfolio_url, city, chapter, role, platform_role, onboarding_completed, created_at'
+  'id, name, username, avatar_url, college, company, bio, skills, github_url, linkedin_url, portfolio_url, city, chapter, role, platform_role, is_judge, onboarding_completed, created_at'
 
 export function toUser(r, email) {
   return {
@@ -141,6 +143,7 @@ export function toUser(r, email) {
     linkedinUrl: r.linkedin_url || '',
     portfolioUrl: r.portfolio_url || '',
     isAdmin: r.platform_role === 'admin',
+    isJudge: Boolean(r.is_judge),
     onboarded: Boolean(r.onboarding_completed),
   }
 }
@@ -276,7 +279,111 @@ export const reviewHostRequest = async (id, action, note = '') =>
   (await request(`/platform/host-requests/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: { note } })).request
 export const platformOverview = () => request('/platform/overview')
 
+// ---------- judges ----------
+export const myJudgeApplications = () => request('/judge-applications/me')
+export const applyAsJudge = async (input) => (await request('/judge-applications', { method: 'POST', body: input })).application
+export const judgeApplications = (status) => request(`/platform/judge-applications${status ? `?status=${status}` : ''}`)
+export const judgeApplication = async (id) => (await request(`/platform/judge-applications/${encodeURIComponent(id)}`)).application
+export const reviewJudgeApplication = async (id, action, note = '') =>
+  (await request(`/platform/judge-applications/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: { note } })).application
+
+// ---------- hackathon projects (participants) ----------
+export const myProjects = async () => (await request('/projects/mine')).projects
+export const submitProject = async (input) => (await request('/projects', { method: 'POST', body: input })).project
+
+// ---------- judge workspace ----------
+export const judgeOverview = () => request('/judge/overview')
+export const judgeProject = (id) => request(`/judge/projects/${encodeURIComponent(id)}`)
+export const submitReview = async (id, scores) => (await request(`/judge/projects/${encodeURIComponent(id)}/review`, { method: 'POST', body: scores })).review
+export const analyzeProject = async (id) => (await request(`/judge/projects/${encodeURIComponent(id)}/analysis`, { method: 'POST' })).analysis
+
+// ---------- organizer judging ----------
+export const organizerHackathons = async () => (await request('/organizer/hackathons')).hackathons
+export const hackathonJudging = (id) => request(`/organizer/hackathons/${encodeURIComponent(id)}/judging`)
+export const approvedJudges = async (q = '') => (await request(`/organizer/judges?q=${encodeURIComponent(q)}`)).judges
+export const assignJudge = (eventId, judgeId) => request(`/organizer/hackathons/${encodeURIComponent(eventId)}/judges`, { method: 'POST', body: { judgeId } })
+export const unassignJudge = (eventId, judgeId) =>
+  request(`/organizer/hackathons/${encodeURIComponent(eventId)}/judges/${encodeURIComponent(judgeId)}`, { method: 'DELETE' })
+export const hackathonResults = (id) => request(`/organizer/hackathons/${encodeURIComponent(id)}/results`)
+export const publishResults = (id, publish) => request(`/organizer/hackathons/${encodeURIComponent(id)}/results`, { method: 'POST', body: { publish } })
+export const publicResults = (id) => request(`/events/${encodeURIComponent(id)}/results`)
+
 // ---------- live listings (proxied + cached by the API) ----------
 export const liveGdg = (force) => request(`/live/gdg${force ? '?refresh=1' : ''}`, { auth: false })
 export const liveDevfolio = (force) => request(`/live/devfolio${force ? '?refresh=1' : ''}`, { auth: false })
 export const liveGdgDetail = async (remoteId) => (await request(`/live/gdg/${remoteId}`, { auth: false })).detail
+
+// ---------- Unstop listings (server-side cached; see docs/unstop-integration.md) ----------
+export const unstopEvents = (params = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== null))
+  return request(`/unstop/events${qs.size ? `?${qs}` : ''}`, { auth: false })
+}
+export const unstopEvent = (id) => request(`/unstop/events/${encodeURIComponent(id)}`, { auth: false })
+export const unstopStatus = async () => (await request('/unstop/status')).status
+export const unstopSync = () => request('/unstop/sync', { method: 'POST' })
+
+// ---------- team matcher ----------
+const q = (params) => new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString()
+export const matcherHackathons = () => request('/team-matcher/hackathons')
+export const teamPreferences = (eventId) => request(`/team-matcher/preferences?${q({ event: eventId })}`)
+export const saveTeamPreferences = async (input) => (await request('/team-matcher/preferences', { method: 'PUT', body: input })).preferences
+export const teamMatches = (eventId, page = 1) => request(`/team-matcher/matches?${q({ event: eventId, page })}`)
+export const interpretSkills = async (text) => (await request('/team-matcher/interpret', { method: 'POST', body: { text } })).suggestions
+export const teamRequests = (eventId) => request(`/team-matcher/requests?${q({ event: eventId })}`)
+export const sendTeamRequest = async (eventId, userId, message = '') => (await request('/team-matcher/requests', { method: 'POST', body: { eventId, userId, message } })).request
+export const respondTeamRequest = async (id, action) => (await request(`/team-matcher/requests/${encodeURIComponent(id)}/${action}`, { method: 'POST' })).request
+
+// ---------- GitHub (tokens stay on the server; the browser only sees metadata) ----------
+export const githubConnection = () => request('/github/connection')
+export const githubConnectUrl = async () => (await request('/github/connect', { method: 'POST' })).url
+export const githubDisconnect = () => request('/github/connection', { method: 'DELETE' })
+export const githubRepos = async () => (await request('/github/repos')).repos
+export const projectRepository = (projectId) => request(`/github/projects/${encodeURIComponent(projectId)}/repository`)
+export const connectProjectRepository = (projectId, repository) =>
+  request(`/github/projects/${encodeURIComponent(projectId)}/repository`, { method: 'POST', body: { repository } })
+export const syncProjectRepository = (projectId) => request(`/github/projects/${encodeURIComponent(projectId)}/repository/sync`, { method: 'POST' })
+export const disconnectProjectRepository = (projectId) => request(`/github/projects/${encodeURIComponent(projectId)}/repository`, { method: 'DELETE' })
+
+// ---------- Demo Day ----------
+export const demoState = (eventId) => request(`/demo/${encodeURIComponent(eventId)}`)
+export const saveDemoSession = (eventId, input) => request(`/demo/${encodeURIComponent(eventId)}`, { method: 'PUT', body: input })
+export const demoControl = (eventId, action, presentationId) =>
+  request(`/demo/${encodeURIComponent(eventId)}/control`, { method: 'POST', body: { action, presentationId } })
+export const judgeNotes = (projectId) => request(`/judge/projects/${encodeURIComponent(projectId)}/notes`)
+export const saveJudgeNotes = (projectId, notes) => request(`/judge/projects/${encodeURIComponent(projectId)}/notes`, { method: 'PUT', body: { notes } })
+
+// ---------- AI Idea Assistant (Gemini runs on the server; the key never reaches the browser) ----------
+export const ideaHackathons = () => request('/ideas/hackathons')
+export const ideaContext = (eventId) => request(`/ideas/context?event=${encodeURIComponent(eventId)}`)
+export const generateIdea = (inputs) => request('/ideas/generate', { method: 'POST', body: inputs })
+export const refineIdea = (action, idea, inputs) => request('/ideas/refine', { method: 'POST', body: { action, idea, inputs } })
+export const myIdeas = async (eventId) => (await request(`/ideas${eventId ? `?event=${encodeURIComponent(eventId)}` : ''}`)).ideas
+export const saveIdea = async (idea, inputs, draftId) => (await request('/ideas', { method: 'POST', body: { idea, inputs, draftId } })).idea
+export const updateIdea = async (id, idea, inputs, draftId) => (await request(`/ideas/${encodeURIComponent(id)}`, { method: 'PUT', body: { idea, inputs, draftId } })).idea
+export const deleteIdea = (id) => request(`/ideas/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+// ---------- Communication Center ----------
+export const announcementHackathons = async () => (await request('/announcements/hackathons')).hackathons
+export const announcements = (eventId, before) => request(`/announcements?event=${encodeURIComponent(eventId)}${before ? `&before=${encodeURIComponent(before)}` : ''}`)
+export const unreadAnnouncements = () => request('/announcements/unread')
+export const createAnnouncement = async (input) => (await request('/announcements', { method: 'POST', body: input })).announcement
+export const updateAnnouncement = async (id, input) => (await request(`/announcements/${encodeURIComponent(id)}`, { method: 'PUT', body: input })).announcement
+export const archiveAnnouncement = async (id) => (await request(`/announcements/${encodeURIComponent(id)}/archive`, { method: 'POST' })).announcement
+export const markAnnouncementsRead = (eventId, ids) => request('/announcements/read', { method: 'POST', body: { eventId, ids } })
+
+// ---------- Organizer analytics ----------
+export const hackathonAnalytics = (id) => request(`/organizer/hackathons/${encodeURIComponent(id)}/analytics`)
+
+// ---------- Participant chat (two-way; separate from announcements) ----------
+export const chatHackathons = async () => (await request('/chat/hackathons')).hackathons
+export const chatRoom = (eventId) => request(`/chat/${encodeURIComponent(eventId)}`)
+export const chatOlder = (eventId, before) => request(`/chat/${encodeURIComponent(eventId)}/messages?before=${encodeURIComponent(before)}`)
+export const sendChatMessage = (eventId, message) => request(`/chat/${encodeURIComponent(eventId)}/messages`, { method: 'POST', body: { message } })
+export const reportChatMessage = (id, reason, details) => request(`/chat/message/${encodeURIComponent(id)}/report`, { method: 'POST', body: { reason, details } })
+export const chatModeration = (eventId) => request(`/chat/moderation/${encodeURIComponent(eventId)}`)
+export const setChatRoomActive = (eventId, active) => request(`/chat/moderation/${encodeURIComponent(eventId)}/room`, { method: 'PUT', body: { active } })
+export const deleteChatMessage = (id) => request(`/chat/moderation/message/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export const reviewChatReport = (id, status) => request(`/chat/moderation/report/${encodeURIComponent(id)}`, { method: 'POST', body: { status } })
+export const muteChatUser = (eventId, userId, minutes, reason, reportId) =>
+  request(`/chat/moderation/${encodeURIComponent(eventId)}/mutes`, { method: 'POST', body: { userId, minutes, reason, reportId } })
+export const unmuteChatUser = (eventId, userId) => request(`/chat/moderation/${encodeURIComponent(eventId)}/mutes/${encodeURIComponent(userId)}`, { method: 'DELETE' })

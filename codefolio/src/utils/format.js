@@ -81,3 +81,12 @@ export const compactNumber = (n) =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '')}K` : String(n)
 
 export const cx = (...args) => args.filter(Boolean).join(' ')
+
+// Date + time in the hackathons' timezone (IST), whatever the viewer's device is set to.
+export function formatIST(isoString) {
+  return `${new Date(isoString).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })} IST`
+}
+// "YYYY-MM-DDTHH:mm" typed as IST → ISO string.
+export const istInputToISO = (v) => (v ? new Date(`${v}:00+05:30`).toISOString() : null)
+// ISO → "YYYY-MM-DDTHH:mm" in IST (for datetime-local inputs).
+export const isoToISTInput = (iso) => (iso ? new Date(Date.parse(iso) + 5.5 * 3600000).toISOString().slice(0, 16) : '')

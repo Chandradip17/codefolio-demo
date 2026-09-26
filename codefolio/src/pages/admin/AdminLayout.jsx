@@ -10,6 +10,14 @@ const NAV = [
   { to: '/admin/bookings', label: 'Bookings', icon: 'ticket' },
   { to: '/admin/checkin', label: 'Check-in', icon: 'scan' },
   { to: '/admin/host-requests', label: 'Host requests', icon: 'shield', admin: true },
+  { to: '/admin/judge-applications', label: 'Judge applications', icon: 'users', admin: true },
+  { to: '/admin/external-events', label: 'External events', icon: 'globe', admin: true },
+  { to: '/organizer/judging', label: 'Judging', icon: 'trophy' },
+  { to: '/organizer/demo-day', label: 'Demo Day', icon: 'radio' },
+  { to: '/organizer/communication', label: 'Communication', icon: 'mail' },
+  { to: '/organizer/chat', label: 'Chat moderation', icon: 'eye' },
+  { to: '/organizer/analytics', label: 'Analytics', icon: 'table' },
+  { to: '/judge/dashboard', label: 'Judge dashboard', icon: 'bar', judge: true },
   { to: '/dashboard', label: 'My tickets', icon: 'qr' },
   { to: '/admin/profile', label: 'Profile', icon: 'user' },
 ]
@@ -33,7 +41,7 @@ export default function AdminLayout() {
         </div>
         <nav>
           <ul>
-            {NAV.filter((n) => !n.admin || user.isAdmin).map((n) => (
+            {NAV.filter((n) => (!n.admin || user.isAdmin) && (!n.judge || user.isJudge)).map((n) => (
               <li key={n.to}>
                 <NavLink to={n.to} end={n.end} className="side-link">
                   <Icon name={n.icon} size={18} />

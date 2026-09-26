@@ -22,14 +22,19 @@ const SOURCE_OPTS = [
   { value: 'devfolio', label: 'Live · Devfolio' },
 ]
 
-export default function EventFilters({ values, onChange, layout = 'row' }) {
+export default function EventFilters({ values, onChange, layout = 'row', unstop = false }) {
   const set = (k) => (e) => onChange({ ...values, [k]: e.target.value })
   return (
     <div className={`filters filters--${layout}`}>
       <Select label="City" value={values.city} onChange={set('city')} options={CITY_OPTS} />
       <Select label="Mode" value={values.mode} onChange={set('mode')} options={MODE_OPTS} />
       <Select label="Date" value={values.date} onChange={set('date')} options={DATE_OPTS} />
-      <Select label="Source" value={values.source} onChange={set('source')} options={SOURCE_OPTS} />
+      <Select
+        label="Source"
+        value={values.source}
+        onChange={set('source')}
+        options={unstop ? [...SOURCE_OPTS, { value: 'unstop', label: 'Live · Unstop' }] : SOURCE_OPTS}
+      />
     </div>
   )
 }

@@ -15,7 +15,18 @@
     "test:phase2": "node scripts/test-phase2.js",
     "smoke:phase2": "node --env-file-if-exists=.env scripts/smoke-phase2.js",
     "smoke:teams": "node --env-file-if-exists=.env scripts/smoke-teams.js",
-    "smoke:fees": "node --env-file-if-exists=.env scripts/smoke-fees.js"
+    "smoke:fees": "node --env-file-if-exists=.env scripts/smoke-fees.js",
+    "test:judging": "node scripts/test-judging.js",
+    "smoke:judging": "node --env-file-if-exists=.env scripts/smoke-judging.js",
+    "test:unstop": "node --env-file-if-exists=.env scripts/test-unstop.js",
+    "test:matcher-demo": "node scripts/test-matcher-demo.js",
+    "test:github-matching": "node scripts/test-github-matching.js",
+    "test:comms-analytics": "node scripts/test-comms-analytics.js",
+    "test:ideas-analytics": "node scripts/test-ideas-analytics.js",
+    "smoke:ideas-comms": "node --env-file-if-exists=.env scripts/smoke-ideas-comms.js",
+    "test:chat": "node scripts/test-chat.js",
+    "smoke:chat": "node --env-file-if-exists=.env scripts/smoke-chat.js",
+    "smoke:advanced": "node --env-file-if-exists=.env scripts/smoke-advanced.js"
   },
   "engines": {
     "node": ">=20.6"

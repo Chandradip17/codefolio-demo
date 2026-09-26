@@ -7,6 +7,10 @@ import { fallbackImage } from '../data/images'
 
 export function seatInfo(event) {
   if (event.status === 'Cancelled') return { label: 'Cancelled', tone: 'danger', pct: 0 }
+  if (event.source === 'unstop') {
+    const s = event.registrationStatus
+    return s === 'closing_soon' ? { label: 'Closing soon', tone: 'warn', pct: null } : { label: 'Registration open', tone: 'live', pct: null }
+  }
   if (event.source === 'devfolio') {
     return { label: event.registered ? `${compactNumber(event.registered)} registered` : 'Applications open', tone: 'live', pct: null }
   }

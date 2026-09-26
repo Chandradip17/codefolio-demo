@@ -76,7 +76,7 @@ function CopyId({ id, label = 'booking ID' }) {
   )
 }
 
-export default function BookingCard({ booking, liveEvent, onCancel, onShowQr }) {
+export default function BookingCard({ booking, liveEvent, onCancel, onShowQr, project, onProject }) {
   const openEvent = useOpenEvent()
   const titleId = useId()
   const [imgFailed, setImgFailed] = useState(false)
@@ -243,6 +243,16 @@ export default function BookingCard({ booking, liveEvent, onCancel, onShowQr }) 
           {canCancel && (
             <Button size="sm" variant="ghost" icon="calendarPlus" onClick={() => downloadIcs(booking, liveEvent?.endTime)} aria-label={`Add ${e.title} to calendar`}>
               Add to calendar
+            </Button>
+          )}
+          {onProject && e.category === 'hackathon' && ['Confirmed', 'Attended'].includes(booking.status) && !eventCancelled && !liveEvent?.resultsPublishedAt && liveEvent && (
+            <Button size="sm" variant={project ? 'ghost' : 'secondary'} icon={project ? 'fileText' : 'plus'} onClick={() => onProject(booking)}>
+              {project ? (project.locked ? 'View project' : 'Edit project') : 'Submit project'}
+            </Button>
+          )}
+          {e.category === 'hackathon' && liveEvent?.resultsPublishedAt && (
+            <Button size="sm" variant="secondary" icon="trophy" to={`/results/${booking.eventId}`}>
+              Results
             </Button>
           )}
           {(canCancel || canWithdraw) && (

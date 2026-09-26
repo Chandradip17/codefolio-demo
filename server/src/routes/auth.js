@@ -4,6 +4,7 @@ import { admin, anonClient } from '../lib/supabase.js'
 import { HttpError, must, notConfigured } from '../lib/errors.js'
 import { bearer, forgetToken, refreshCachedUser, requireAuth } from '../lib/auth.js'
 import { toSession, toUser } from '../lib/mappers.js'
+import { createJudgeApplication } from './judging.js'
 import { config } from '../lib/config.js'
 import { forgotSchema, loginSchema, profileSchema, refreshSchema, resetSchema, signupSchema } from '../lib/validate.js'
 
@@ -71,8 +72,18 @@ router.post('/signup', authLimiter, async (req, res) => {
     if (hrErr) console.warn('[auth] host request at signup failed:', hrErr.message)
     hostRequest = hr ? { status: 'pending' } : null
   }
+  // "Apply to become a Judge": files a pending application; no judge powers until an admin approves.
+  let judgeApplication = null
+  if (input.judge) {
+    try {
+      await createJudgeApplication(created.user.id, input.judge)
+      judgeApplication = { status: 'pending' }
+    } catch (e) {
+      console.warn('[auth] judge application at signup failed:', e.message)
+    }
+  }
   const { session, user } = await signIn(input.email, input.password)
-  res.status(201).json({ user: await profileFor(user.id), session: toSession(session), hostRequest })
+  res.status(201).json({ user: await profileFor(user.id), session: toSession(session), hostRequest, judgeApplication })
 })
 
 // POST /api/auth/login
