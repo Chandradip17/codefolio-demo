@@ -78,10 +78,14 @@ export async function signup(input) {
   if (error) throw authError(error)
   return me()
 }
+const DEFAULT_SUPABASE_URL = 'https://zvtlkfbzmwgxhglsjnat.supabase.co'
+const DEFAULT_SUPABASE_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2dGxrZmJ6bXdneGhnbHNqbmF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMjY0ODksImV4cCI6MjEwNTkwMjQ4OX0.QMqPpDthJI7p3Jny7sLeZqtinjlvrkeVJBiXfV7AFwU'
+
 // Which sign-in providers are switched on in Supabase (public endpoint).
 async function authProviders() {
-  const url = import.meta.env.VITE_SUPABASE_URL
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY
   try {
     const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
     return res.ok ? (await res.json()).external || null : null

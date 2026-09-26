@@ -2,11 +2,14 @@ import { createClient } from '@supabase/supabase-js'
 
 // Browser client: publishable key only, so every read/write is enforced by RLS.
 // The service-role key lives only on the server (server/.env).
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-if (!url || !key) console.error('Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (see codefolio/.env.example).')
+const DEFAULT_URL = 'https://zvtlkfbzmwgxhglsjnat.supabase.co'
+const DEFAULT_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2dGxrZmJ6bXdneGhnbHNqbmF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMjY0ODksImV4cCI6MjEwNTkwMjQ4OX0.QMqPpDthJI7p3Jny7sLeZqtinjlvrkeVJBiXfV7AFwU'
 
-export const supabase = createClient(url || 'http://localhost', key || 'missing', {
+const url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_URL
+const key = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_KEY
+
+export const supabase = createClient(url, key, {
   auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },
 })
 
